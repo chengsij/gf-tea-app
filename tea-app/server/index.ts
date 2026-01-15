@@ -1,9 +1,11 @@
-import express from 'express';
-import cors from 'cors';
 import fs from 'fs';
 import path from 'path';
+
+import cors from 'cors';
+import express from 'express';
 import yaml from 'js-yaml';
-import puppeteer from 'puppeteer';
+import puppeteer, { Browser, HTTPRequest } from 'puppeteer';
+import { z } from 'zod';
 
 const app = express();
 const port = 3001;
@@ -16,20 +18,29 @@ const DATA_FILE = isDist
 app.use(cors());
 app.use(express.json());
 
-interface Tea {
-  id: string;
-  name: string;
-  type: string;
-  image: string;
-  steepTimes: number[];
-}
+const TeaSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  type: z.string(),
+  image: z.string(),
+  steepTimes: z.array(z.number())
+});
+
+type Tea = z.infer<typeof TeaSchema>;
 
 const readTeas = (): Tea[] => {
   if (!fs.existsSync(DATA_FILE)) {
     return [];
   }
   const fileContents = fs.readFileSync(DATA_FILE, 'utf8');
-  return (yaml.load(fileContents) as Tea[]) || [];
+  // Validate data read from file
+  try {
+     const data = yaml.load(fileContents);
+     return z.array(TeaSchema).parse(data);
+  } catch (error) {
+     console.error("Failed to parse teas.yaml:", error);
+     return [];
+  }
 };
 
 const writeTeas = (teas: Tea[]) => {
@@ -38,7 +49,7 @@ const writeTeas = (teas: Tea[]) => {
 };
 
 // Singleton browser instance
-let browserInstance: puppeteer.Browser | null = null;
+let browserInstance: Browser | null = null;
 
 const getBrowser = async () => {
   if (!browserInstance) {
@@ -68,7 +79,7 @@ app.post('/api/teas/import', async (req, res) => {
     
     // Optimize: Block unnecessary resources
     await page.setRequestInterception(true);
-    page.on('request', (req) => {
+    page.on('request', (req: HTTPRequest) => {
       const resourceType = req.resourceType();
       if (['image', 'stylesheet', 'font', 'media', 'script', 'xhr', 'fetch'].includes(resourceType)) {
         req.abort();
@@ -163,12 +174,19 @@ app.get('/api/teas', (req, res) => {
 app.post('/api/teas', (req, res) => {
   try {
     const teas = readTeas();
-    const newTea = { ...req.body, id: Date.now().toString() };
+    // Validate request body
+    const newTeaData = TeaSchema.omit({ id: true }).parse(req.body);
+    
+    const newTea: Tea = { ...newTeaData, id: Date.now().toString() };
     teas.push(newTea);
     writeTeas(teas);
     res.status(201).json(newTea);
-  } catch {
-    res.status(500).json({ error: 'Failed to save tea' });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+       res.status(400).json({ error: 'Invalid tea data', details: error.issues });
+    } else {
+       res.status(500).json({ error: 'Failed to save tea' });
+    }
   }
 });
 
