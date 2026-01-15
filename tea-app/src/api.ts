@@ -13,6 +13,11 @@ export const createTea = async (tea: Omit<Tea, 'id'>): Promise<Tea> => {
   return response.data;
 };
 
+export const importTeaFromUrl = async (url: string): Promise<Omit<Tea, 'id'>> => {
+  const response = await axios.post(`${API_URL}/teas/import`, { url });
+  return response.data;
+};
+
 export const deleteTea = async (id: string): Promise<void> => {
   await axios.delete(`${API_URL}/teas/${id}`);
 };
