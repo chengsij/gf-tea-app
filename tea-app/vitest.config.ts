@@ -1,7 +1,7 @@
-import { defineConfig } from 'vite'
-import type { Plugin } from 'vite'
-import react from '@vitejs/plugin-react'
-import path from 'path'
+import { defineConfig } from 'vitest/config';
+import react from '@vitejs/plugin-react';
+import type { Plugin } from 'vite';
+import path from 'path';
 
 // Custom plugin to ensure shared folder dependencies are resolved correctly
 const sharedFolderPlugin: Plugin = {
@@ -15,10 +15,15 @@ const sharedFolderPlugin: Plugin = {
   }
 }
 
-// https://vite.dev/config/
 export default defineConfig({
   plugins: [sharedFolderPlugin, react()],
-  optimizeDeps: {
-    include: ['zod']
-  }
-})
+  test: {
+    globals: true,
+    environment: 'jsdom',
+    setupFiles: './src/test/setup.ts',
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'json', 'html'],
+    },
+  },
+});

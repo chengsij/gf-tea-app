@@ -1,9 +1,13 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import './App.css'
-import type { Tea } from './types'
+import type { Tea, CaffeineLevel, TeaType } from './types'
 import { getTeas, createTea, deleteTea, importTeaFromUrl } from './api'
 import { TimerProvider, useTimer } from './TimerContext'
-import { Clock, Trash2, Plus, X, Search, Coffee, ExternalLink } from 'lucide-react'
+import { Clock, Plus, X, Coffee, ExternalLink } from 'lucide-react'
+import { CAFFEINE_LEVELS, TEA_TYPES } from './types'
+import { Toaster } from 'sonner'
+import { showSuccess, showError, showInfo } from './utils/toast'
+import { TeaCard, FilterBar, SortControls } from './components'
 
 const TimerOverlay = () => {
   const { timeLeft, activeTeaName, stopTimer } = useTimer();
@@ -85,7 +89,7 @@ const SidePanel = ({
         <div className="steep-times-section">
           <h3>Steep Times</h3>
           <div className={`steep-times ${tea.steepTimes.length >= 6 ? 'steep-times-many' : ''}`}>
-            {tea.steepTimes.map((time, idx) => (
+            {tea.steepTimes.map((time: number, idx: number) => (
               <button
                 key={idx}
                 className={`steep-time-btn ${usedSteepTimes.has(idx) ? 'used' : ''}`}
@@ -108,52 +112,82 @@ const SidePanel = ({
 
 const TeaForm = ({ onTeaAdded, onClose }: { onTeaAdded: () => void, onClose: () => void }) => {
   const [name, setName] = useState('');
-  const [type, setType] = useState('');
+  const [type, setType] = useState<TeaType>('Green');
   const [image, setImage] = useState('');
   const [steepTimes, setSteepTimes] = useState('');
   const [caffeine, setCaffeine] = useState('');
-  const [caffeineLevel, setCaffeineLevel] = useState<'Low' | 'Medium' | 'High'>('Low');
+  const [caffeineLevel, setCaffeineLevel] = useState<CaffeineLevel>('Low');
   const [website, setWebsite] = useState('');
   const [brewingTemperature, setBrewingTemperature] = useState('');
   const [teaWeight, setTeaWeight] = useState('');
   const [importUrl, setImportUrl] = useState('');
   const [isImporting, setIsImporting] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const times = steepTimes.split(',').map(t => parseInt(t.trim())).filter(t => !isNaN(t));
-    await createTea({
-      name,
-      type,
-      image,
-      steepTimes: times,
-      caffeine,
-      caffeineLevel,
-      website,
-      brewingTemperature,
-      teaWeight
-    });
-    onTeaAdded();
-    onClose();
+    setIsSubmitting(true);
+
+    try {
+      const times = steepTimes.split(',').map(t => parseInt(t.trim())).filter(t => !isNaN(t));
+
+      if (times.length === 0) {
+        showError('Please enter at least one steep time.');
+        return;
+      }
+
+      await createTea({
+        name,
+        type,
+        image,
+        steepTimes: times,
+        caffeine,
+        caffeineLevel,
+        website,
+        brewingTemperature,
+        teaWeight
+      });
+
+      showSuccess('Tea added successfully!');
+      onTeaAdded();
+      onClose();
+    } catch (error) {
+      console.error('Failed to create tea:', error);
+      if (error instanceof Error) {
+        showError(`Failed to save tea: ${error.message}`);
+      } else {
+        showError('Failed to save tea. Please check your input and try again.');
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleImport = async () => {
     if (!importUrl) return;
+
     setIsImporting(true);
+
     try {
       const data = await importTeaFromUrl(importUrl);
       setName(data.name);
-      setType(data.type);
+      setType(data.type as TeaType);
       setImage(data.image);
       setSteepTimes(data.steepTimes.join(', '));
       setCaffeine(data.caffeine || '');
-      setCaffeineLevel(data.caffeineLevel as 'Low' | 'Medium' | 'High');
+      setCaffeineLevel(data.caffeineLevel);
       setWebsite(data.website || '');
       setBrewingTemperature(data.brewingTemperature);
       setTeaWeight(data.teaWeight);
       setImportUrl('');
+      showInfo('Tea information imported');
     } catch (error) {
-      alert('Failed to import tea data.');
+      console.error('Failed to import tea data:', error);
+      if (error instanceof Error) {
+        showError(`Import failed: ${error.message}`);
+      } else {
+        showError('Failed to import tea data from URL. Please check the URL and try again.');
+      }
     } finally {
       setIsImporting(false);
     }
@@ -172,19 +206,19 @@ const TeaForm = ({ onTeaAdded, onClose }: { onTeaAdded: () => void, onClose: () 
             <div className="form-group">
               <label>Import from URL</label>
               <div className="input-group">
-                <input 
-                  value={importUrl} 
-                  onChange={e => setImportUrl(e.target.value)} 
-                  placeholder="https://www.teavivre.com/..." 
+                <input
+                  value={importUrl}
+                  onChange={e => setImportUrl(e.target.value)}
+                  placeholder="https://www.teavivre.com/..."
                 />
-                <button 
-                  type="button" 
-                  onClick={handleImport} 
+                <button
+                  type="button"
+                  onClick={handleImport}
                   disabled={isImporting}
                   className="btn-primary"
                   style={{minWidth: '100px'}}
                 >
-                  {isImporting ? '...' : 'Auto-fill'}
+                  {isImporting ? 'Importing...' : 'Auto-fill'}
                 </button>
               </div>
             </div>
@@ -197,7 +231,11 @@ const TeaForm = ({ onTeaAdded, onClose }: { onTeaAdded: () => void, onClose: () 
             </div>
             <div className="form-group">
               <label>Type</label>
-              <input value={type} onChange={e => setType(e.target.value)} required placeholder="e.g. Green" />
+              <select value={type} onChange={e => setType(e.target.value as TeaType)} required>
+                {TEA_TYPES.map(teaType => (
+                  <option key={teaType} value={teaType}>{teaType}</option>
+                ))}
+              </select>
             </div>
             <div className="form-group">
               <label>Image URL</label>
@@ -213,10 +251,10 @@ const TeaForm = ({ onTeaAdded, onClose }: { onTeaAdded: () => void, onClose: () 
             </div>
             <div className="form-group">
               <label>Caffeine Level</label>
-              <select value={caffeineLevel} onChange={e => setCaffeineLevel(e.target.value as 'Low' | 'Medium' | 'High')} required>
-                <option value="Low">Low</option>
-                <option value="Medium">Medium</option>
-                <option value="High">High</option>
+              <select value={caffeineLevel} onChange={e => setCaffeineLevel(e.target.value as CaffeineLevel)} required>
+                {CAFFEINE_LEVELS.map(level => (
+                  <option key={level} value={level}>{level}</option>
+                ))}
               </select>
             </div>
             <div className="form-group">
@@ -231,7 +269,9 @@ const TeaForm = ({ onTeaAdded, onClose }: { onTeaAdded: () => void, onClose: () 
               <label>Tea Weight (Gongfu Method)</label>
               <input value={teaWeight} onChange={e => setTeaWeight(e.target.value)} placeholder="e.g. 5g Tea" required />
             </div>
-            <button type="submit" className="btn-primary" style={{marginTop: '0.5rem', width: '100%'}}>Save Tea</button>
+            <button type="submit" className="btn-primary" disabled={isSubmitting} style={{marginTop: '0.5rem', width: '100%'}}>
+              {isSubmitting ? 'Saving...' : 'Save Tea'}
+            </button>
           </form>
         </div>
       </div>
@@ -248,11 +288,19 @@ const TeaDashboard = () => {
   const [sortBy, setSortBy] = useState<'date' | 'name-asc' | 'name-desc' | 'type' | 'caffeine-asc' | 'caffeine-desc' | 'steeps-asc' | 'steeps-desc'>('date');
   const [usedSteepTimes, setUsedSteepTimes] = useState<Map<string, Set<number>>>(new Map());
   const [selectedTeaId, setSelectedTeaId] = useState<string | null>(null);
+  const [deletingTeaId, setDeletingTeaId] = useState<string | null>(null);
   const { startTimer } = useTimer();
 
   const fetchTeas = async () => {
-    const data = await getTeas();
-    setTeas(data);
+    try {
+      const data = await getTeas();
+      setTeas(data);
+    } catch (error) {
+      console.error('Failed to load teas:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      showError(`Failed to load tea collection: ${errorMessage}`);
+      setTeas([]);
+    }
   };
 
   useEffect(() => {
@@ -262,16 +310,26 @@ const TeaDashboard = () => {
   const handleDelete = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     if (confirm('Are you sure you want to delete this tea?')) {
-      await deleteTea(id);
-      setUsedSteepTimes(prev => {
-        const newMap = new Map(prev);
-        newMap.delete(id);
-        return newMap;
-      });
-      if (selectedTeaId === id) {
-        setSelectedTeaId(null);
+      setDeletingTeaId(id);
+      try {
+        await deleteTea(id);
+        setUsedSteepTimes(prev => {
+          const newMap = new Map(prev);
+          newMap.delete(id);
+          return newMap;
+        });
+        if (selectedTeaId === id) {
+          setSelectedTeaId(null);
+        }
+        await fetchTeas();
+        showSuccess('Tea deleted successfully');
+      } catch (error) {
+        console.error('Failed to delete tea:', error);
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        showError(`Failed to delete tea: ${errorMessage}`);
+      } finally {
+        setDeletingTeaId(null);
       }
-      fetchTeas();
     }
   };
 
@@ -287,7 +345,9 @@ const TeaDashboard = () => {
   };
 
 
-  const uniqueTypes = Array.from(new Set(teas.map(tea => tea.type))).sort();
+  const uniqueTypes = useMemo(() => {
+    return Array.from(new Set(teas.map(tea => tea.type))).sort();
+  }, [teas]);
 
   const caffeineLevelValue = (level: string) => {
     if (level === 'Low') return 1;
@@ -296,33 +356,35 @@ const TeaDashboard = () => {
     return 0;
   };
 
-  const filteredTeas = teas.filter(tea => {
-    const matchesSearch = tea.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         tea.type.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesType = selectedType === null || tea.type === selectedType;
-    const matchesCaffeine = selectedCaffeineLevel === null || tea.caffeineLevel === selectedCaffeineLevel;
-    return matchesSearch && matchesType && matchesCaffeine;
-  }).sort((a, b) => {
-    switch (sortBy) {
-      case 'name-asc':
-        return a.name.localeCompare(b.name);
-      case 'name-desc':
-        return b.name.localeCompare(a.name);
-      case 'type':
-        return a.type.localeCompare(b.type);
-      case 'caffeine-asc':
-        return caffeineLevelValue(a.caffeineLevel) - caffeineLevelValue(b.caffeineLevel);
-      case 'caffeine-desc':
-        return caffeineLevelValue(b.caffeineLevel) - caffeineLevelValue(a.caffeineLevel);
-      case 'steeps-asc':
-        return a.steepTimes.length - b.steepTimes.length;
-      case 'steeps-desc':
-        return b.steepTimes.length - a.steepTimes.length;
-      case 'date':
-      default:
-        return parseInt(b.id) - parseInt(a.id);
-    }
-  });
+  const filteredTeas = useMemo(() => {
+    return teas.filter(tea => {
+      const matchesSearch = tea.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                           tea.type.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesType = selectedType === null || tea.type === selectedType;
+      const matchesCaffeine = selectedCaffeineLevel === null || tea.caffeineLevel === selectedCaffeineLevel;
+      return matchesSearch && matchesType && matchesCaffeine;
+    }).sort((a, b) => {
+      switch (sortBy) {
+        case 'name-asc':
+          return a.name.localeCompare(b.name);
+        case 'name-desc':
+          return b.name.localeCompare(a.name);
+        case 'type':
+          return a.type.localeCompare(b.type);
+        case 'caffeine-asc':
+          return caffeineLevelValue(a.caffeineLevel) - caffeineLevelValue(b.caffeineLevel);
+        case 'caffeine-desc':
+          return caffeineLevelValue(b.caffeineLevel) - caffeineLevelValue(a.caffeineLevel);
+        case 'steeps-asc':
+          return a.steepTimes.length - b.steepTimes.length;
+        case 'steeps-desc':
+          return b.steepTimes.length - a.steepTimes.length;
+        case 'date':
+        default:
+          return parseInt(b.id) - parseInt(a.id);
+      }
+    });
+  }, [teas, searchTerm, selectedType, selectedCaffeineLevel, sortBy]);
 
   useEffect(() => {
     // Close side panel if the selected tea is filtered out
@@ -342,80 +404,24 @@ const TeaDashboard = () => {
         </div>
         
         <div className="header-controls">
-           <div className="search-container">
-             <Search size={18} className="search-icon" />
-             <input
-               placeholder="Search teas..."
-               value={searchTerm}
-               onChange={e => setSearchTerm(e.target.value)}
-             />
-           </div>
-           <select value={sortBy} onChange={(e) => setSortBy(e.target.value as typeof sortBy)} className="sort-select">
-             <option value="date">Recently Added</option>
-             <option value="name-asc">Name (A-Z)</option>
-             <option value="name-desc">Name (Z-A)</option>
-             <option value="type">Tea Type</option>
-             <option value="caffeine-asc">Caffeine (Low to High)</option>
-             <option value="caffeine-desc">Caffeine (High to Low)</option>
-             <option value="steeps-asc">Steeps (Fewest First)</option>
-             <option value="steeps-desc">Steeps (Most First)</option>
-           </select>
-           <button onClick={() => setShowForm(true)} className="btn-primary btn-add-tea">
-             <Plus size={18} /> Add Tea
-           </button>
+          <SortControls sortBy={sortBy} onSortChange={setSortBy} />
+          <button onClick={() => setShowForm(true)} className="btn-primary btn-add-tea">
+            <Plus size={18} /> Add Tea
+          </button>
         </div>
       </div>
 
       {showForm && <TeaForm onTeaAdded={fetchTeas} onClose={() => setShowForm(false)} />}
 
-      <div className="filters-combined">
-        <div className="filter-group">
-          <button
-            className={`filter-btn ${selectedType === null ? 'active' : ''}`}
-            onClick={() => setSelectedType(null)}
-          >
-            All Types
-          </button>
-          {uniqueTypes.map(type => (
-            <button
-              key={type}
-              className={`filter-btn ${selectedType === type ? 'active' : ''}`}
-              onClick={() => setSelectedType(type)}
-            >
-              {type}
-            </button>
-          ))}
-        </div>
-
-        <div className="filter-separator"></div>
-
-        <div className="filter-group">
-          <button
-            className={`filter-btn ${selectedCaffeineLevel === null ? 'active' : ''}`}
-            onClick={() => setSelectedCaffeineLevel(null)}
-          >
-            All Levels
-          </button>
-          <button
-            className={`filter-btn ${selectedCaffeineLevel === 'Low' ? 'active' : ''}`}
-            onClick={() => setSelectedCaffeineLevel('Low')}
-          >
-            Low
-          </button>
-          <button
-            className={`filter-btn ${selectedCaffeineLevel === 'Medium' ? 'active' : ''}`}
-            onClick={() => setSelectedCaffeineLevel('Medium')}
-          >
-            Medium
-          </button>
-          <button
-            className={`filter-btn ${selectedCaffeineLevel === 'High' ? 'active' : ''}`}
-            onClick={() => setSelectedCaffeineLevel('High')}
-          >
-            High
-          </button>
-        </div>
-      </div>
+      <FilterBar
+        searchTerm={searchTerm}
+        onSearchChange={setSearchTerm}
+        selectedType={selectedType}
+        onTypeChange={setSelectedType}
+        selectedCaffeineLevel={selectedCaffeineLevel}
+        onCaffeineLevelChange={setSelectedCaffeineLevel}
+        uniqueTypes={uniqueTypes}
+      />
 
       <div className="main-layout">
         {teas.length === 0 ? (
@@ -428,52 +434,16 @@ const TeaDashboard = () => {
           <div className="tea-grid-container">
             <div className="tea-grid">
               {filteredTeas.map(tea => (
-                <div
+                <TeaCard
                   key={tea.id}
-                  className={`tea-card ${selectedTeaId === tea.id ? 'selected' : ''}`}
-                  onClick={() => setSelectedTeaId(tea.id)}
-                >
-                  <div className="tea-image-container">
-                    <img src={tea.image} alt={tea.name} loading="lazy" />
-                    <div className="image-buttons">
-                      {tea.website && (
-                        <a
-                          href={tea.website}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="btn-website-top"
-                          title="Visit website"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <ExternalLink size={18} />
-                        </a>
-                      )}
-                      <button
-                        className="btn-delete"
-                        onClick={(e) => handleDelete(tea.id, e)}
-                        title="Delete Tea"
-                      >
-                        <Trash2 size={18} />
-                      </button>
-                    </div>
-                  </div>
-                  <div className="tea-content">
-                    <div className="tea-header">
-                      <div className="tea-title">
-                        <h2>{tea.name}</h2>
-                        <div className="tea-meta">
-                          <span className="tea-type">{tea.type}</span>
-                          {tea.caffeineLevel && <span className={`tea-caffeine ${tea.caffeineLevel.toLowerCase()}`}>{tea.caffeineLevel} Caffeine</span>}
-                        </div>
-                        <div className="tea-brewing-info">
-                          {tea.brewingTemperature && <span className="brewing-temp">{tea.brewingTemperature}</span>}
-                          {tea.teaWeight && <span className="tea-weight">{tea.teaWeight}</span>}
-                          <span className="steep-count">{tea.steepTimes.length} steeps</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+                  tea={tea}
+                  usedSteepTimes={usedSteepTimes.get(tea.id) || new Set()}
+                  onTeaClick={() => setSelectedTeaId(tea.id)}
+                  onSteepClick={() => {}}
+                  onDeleteClick={handleDelete}
+                  deletingTeaId={deletingTeaId}
+                  isSelected={selectedTeaId === tea.id}
+                />
               ))}
             </div>
           </div>
@@ -504,6 +474,7 @@ const TeaDashboard = () => {
 function App() {
   return (
     <TimerProvider>
+      <Toaster position="top-right" richColors />
       <TimerOverlay />
       <TeaDashboard />
     </TimerProvider>

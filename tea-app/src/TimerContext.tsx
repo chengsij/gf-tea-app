@@ -9,12 +9,30 @@ interface TimerContextType {
 
 const TimerContext = createContext<TimerContextType | undefined>(undefined);
 
-const playNotificationSound = (type: 'chime' | 'start' | 'end') => {
+// Singleton AudioContext to prevent memory leaks
+let audioContext: AudioContext | null = null;
+
+const getAudioContext = (): AudioContext | null => {
+  if (audioContext) {
+    return audioContext;
+  }
+
   try {
     const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-    if (!AudioContextClass) return;
+    if (AudioContextClass) {
+      audioContext = new AudioContextClass();
+    }
+  } catch (e) {
+    console.error("Failed to create AudioContext", e);
+  }
 
-    const ctx = new AudioContextClass();
+  return audioContext;
+};
+
+const playNotificationSound = (type: 'chime' | 'start' | 'end') => {
+  try {
+    const ctx = getAudioContext();
+    if (!ctx) return;
 
     if (type === 'chime') {
         // Pleasant chime: ascending then descending tones

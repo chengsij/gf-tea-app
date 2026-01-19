@@ -1,13 +1,10 @@
 import axios from 'axios';
 import { z } from 'zod';
 
-import { TeaSchema } from './types';
-import type { Tea } from './types';
+import { TeaSchema, CreateTeaSchema } from './types';
+import type { Tea, CreateTea } from './types';
 
-const API_URL = 'http://localhost:3001/api';
-
-const CreateTeaSchema = TeaSchema.omit({ id: true });
-type CreateTea = z.infer<typeof CreateTeaSchema>;
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
 
 export const getTeas = async (): Promise<Tea[]> => {
   const response = await axios.get(`${API_URL}/teas`);

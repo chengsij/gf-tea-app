@@ -2,10 +2,18 @@ import fs from 'fs';
 import path from 'path';
 
 import cors from 'cors';
+import dotenv from 'dotenv';
 import express from 'express';
 import yaml from 'js-yaml';
 import puppeteer, { Browser, HTTPRequest } from 'puppeteer';
 import { z } from 'zod';
+
+// Load environment variables
+dotenv.config();
+
+// Import shared types and constants
+import { TeaSchema } from '../../shared/types';
+import type { Tea } from '../../shared/types';
 
 const app = express();
 const port = 3001;
@@ -15,28 +23,80 @@ const DATA_FILE = isDist
   ? path.join(__dirname, '..', 'teas.yaml')
   : path.join(__dirname, 'teas.yaml');
 
-app.use(cors());
+// Configure CORS with whitelisted origins
+const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',').map(origin => origin.trim()) || ['http://localhost:5173'];
+
+app.use(cors({
+  origin: allowedOrigins,
+  credentials: true,
+  methods: ['GET', 'POST', 'DELETE'],
+  allowedHeaders: ['Content-Type']
+}));
 app.use(express.json());
 
-const CaffeineLevelSchema = z.enum(['Low', 'Medium', 'High']);
-const TeaTypeSchema = z.enum(['Green', 'Black', 'PuEr', 'Yellow', 'White', 'Oolong']);
-
-const TeaSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  type: TeaTypeSchema,
-  image: z.string(),
-  steepTimes: z.array(z.number()),
-  caffeine: z.string(),
-  caffeineLevel: CaffeineLevelSchema,
-  website: z.string(),
-  brewingTemperature: z.string(),
-  teaWeight: z.string()
-});
-
-type Tea = z.infer<typeof TeaSchema>;
-
 // Normalize tea type to canonical form (handles variations like "pu-er", "Pu-Er", etc.)
+// Helper function to check if a hostname is a private/local IP address
+const isPrivateIP = (hostname: string): boolean => {
+  // IPv4 private ranges
+  const ipv4Patterns = [
+    /^127\./,                        // 127.0.0.0/8 (localhost)
+    /^10\./,                         // 10.0.0.0/8
+    /^172\.(1[6-9]|2[0-9]|3[01])\./, // 172.16.0.0/12
+    /^192\.168\./,                   // 192.168.0.0/16
+    /^169\.254\./,                   // 169.254.0.0/16 (link-local)
+  ];
+
+  // Check for localhost and loopback aliases
+  if (hostname === 'localhost' || hostname === 'localhost.localdomain') {
+    return true;
+  }
+
+  // Check IPv4 patterns
+  for (const pattern of ipv4Patterns) {
+    if (pattern.test(hostname)) {
+      return true;
+    }
+  }
+
+  // IPv6 loopback and private ranges
+  if (hostname === '::1' || hostname === '::' || hostname.startsWith('fc') || hostname.startsWith('fd')) {
+    return true;
+  }
+
+  return false;
+};
+
+// Helper function to validate the URL for SSRF attacks
+const validateURLForSSRF = (url: string): { valid: boolean; error?: string } => {
+  // Check for empty URL
+  if (!url || typeof url !== 'string' || url.trim() === '') {
+    return { valid: false, error: 'URL cannot be empty' };
+  }
+
+  try {
+    const parsed = new URL(url);
+
+    // Check protocol - only allow http and https
+    if (!['http:', 'https:'].includes(parsed.protocol)) {
+      return { valid: false, error: 'Only HTTP/HTTPS URLs are allowed' };
+    }
+
+    // Check for empty hostname
+    if (!parsed.hostname) {
+      return { valid: false, error: 'Invalid URL format: missing hostname' };
+    }
+
+    // Check for private/local IP addresses
+    if (isPrivateIP(parsed.hostname)) {
+      return { valid: false, error: 'Cannot scrape private/local URLs' };
+    }
+
+    return { valid: true };
+  } catch (error) {
+    return { valid: false, error: 'Invalid URL format' };
+  }
+};
+
 const normalizeTeaType = (type: string): string => {
   const normalized = type.toLowerCase().trim();
 
@@ -52,23 +112,57 @@ const normalizeTeaType = (type: string): string => {
 };
 
 const readTeas = (): Tea[] => {
-  if (!fs.existsSync(DATA_FILE)) {
-    return [];
-  }
-  const fileContents = fs.readFileSync(DATA_FILE, 'utf8');
-  // Validate data read from file
   try {
-     const data = yaml.load(fileContents);
-     return z.array(TeaSchema).parse(data);
+    if (!fs.existsSync(DATA_FILE)) {
+      console.log(`Data file not found at ${DATA_FILE}, returning empty collection`);
+      return [];
+    }
+
+    const fileContents = fs.readFileSync(DATA_FILE, 'utf8');
+
+    // Validate data read from file
+    const data = yaml.load(fileContents);
+    return z.array(TeaSchema).parse(data);
   } catch (error) {
-     console.error("Failed to parse teas.yaml:", error);
-     return [];
+    console.error('Failed to read or parse teas.yaml:', error);
+    if (error instanceof z.ZodError) {
+      console.error('Validation error details:', error.issues);
+    }
+    throw new Error('Failed to read tea collection from file');
   }
 };
 
-const writeTeas = (teas: Tea[]) => {
-  const yamlStr = yaml.dump(teas);
-  fs.writeFileSync(DATA_FILE, yamlStr, 'utf8');
+const writeTeas = (teas: Tea[]): boolean => {
+  try {
+    const yamlStr = yaml.dump(teas);
+
+    // Check if directory exists
+    const dirPath = path.dirname(DATA_FILE);
+    if (!fs.existsSync(dirPath)) {
+      try {
+        fs.mkdirSync(dirPath, { recursive: true });
+        console.log(`Created directory: ${dirPath}`);
+      } catch (mkdirError) {
+        console.error(`Failed to create directory ${dirPath}:`, mkdirError);
+        throw new Error('Failed to create data directory');
+      }
+    }
+
+    // Attempt to write file
+    fs.writeFileSync(DATA_FILE, yamlStr, 'utf8');
+    console.log(`Successfully saved ${teas.length} teas to ${DATA_FILE}`);
+    return true;
+  } catch (error) {
+    console.error('Failed to write teas.yaml:', error);
+    if (error instanceof Error) {
+      if (error.message.includes('EACCES')) {
+        throw new Error('Permission denied: Unable to write to data file');
+      } else if (error.message.includes('ENOSPC')) {
+        throw new Error('Disk full: Unable to save tea data');
+      }
+    }
+    throw new Error('Failed to save tea collection to file');
+  }
 };
 
 // Singleton browser instance
@@ -90,15 +184,41 @@ const getBrowser = async () => {
 
 app.post('/api/teas/import', async (req, res) => {
   const { url } = req.body;
-  if (!url) {
-    res.status(400).json({ error: 'URL is required' });
+
+  // Validate URL for SSRF attacks
+  const urlValidation = validateURLForSSRF(url);
+  if (!urlValidation.valid) {
+    console.error('SSRF validation failed:', urlValidation.error);
+    res.status(400).json({ error: urlValidation.error });
     return;
   }
 
   let page;
   try {
-    const browser = await getBrowser();
-    page = await browser.newPage();
+    let browser;
+    try {
+      browser = await getBrowser();
+    } catch (browserError) {
+      console.error('Failed to launch browser:', browserError);
+      res.status(500).json({ error: 'Failed to initialize browser. Please try again later.' });
+      return;
+    }
+
+    // Check if browser is connected
+    if (!browser || browser.process() === null) {
+      console.error('Browser instance is not connected');
+      browserInstance = null;
+      res.status(500).json({ error: 'Browser connection lost. Please try again.' });
+      return;
+    }
+
+    try {
+      page = await browser.newPage();
+    } catch (pageError) {
+      console.error('Failed to create new page:', pageError);
+      res.status(500).json({ error: 'Failed to create browser page. Please try again.' });
+      return;
+    }
     
     // Optimize: Block unnecessary resources (but allow scripts so page renders properly)
     await page.setRequestInterception(true);
@@ -113,18 +233,41 @@ app.post('/api/teas/import', async (req, res) => {
       }
     });
 
-    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36');
+    await page.setUserAgent({
+      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    });
 
+    // Navigate to URL with error handling
+    let navigationSuccess = false;
     try {
       await page.goto(url, { waitUntil: 'networkidle2', timeout: 8000 });
-    } catch (e) {
-      console.log('Navigation timeout or error, proceeding to scrape...');
+      navigationSuccess = true;
+      console.log(`Successfully navigated to ${url}`);
+    } catch (navigationError) {
+      console.warn(`Navigation to ${url} timed out or failed, attempting to scrape available content:`, navigationError instanceof Error ? navigationError.message : navigationError);
+      // Continue anyway - some pages may be scrapeable even if they timeout
+      navigationSuccess = false;
+    }
+
+    if (!navigationSuccess) {
+      try {
+        // If networkidle2 failed, try with a shorter timeout
+        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 5000 });
+        console.log(`Succeeded with domcontentloaded for ${url}`);
+      } catch (fallbackError) {
+        console.error(`Failed to load page at all:`, fallbackError instanceof Error ? fallbackError.message : fallbackError);
+        await page.close();
+        res.status(400).json({ error: 'Failed to load the URL. Please verify the URL is valid and accessible.' });
+        return;
+      }
     }
 
     // Give extra time for dynamic content to render
     await new Promise(resolve => setTimeout(resolve, 1000));
 
-    const data = await page.evaluate(() => {
+    let data;
+    try {
+      data = await page.evaluate(() => {
       try {
         // Remove customer reviews section from all processing
         let bodyText = document.body.innerText;
@@ -159,7 +302,7 @@ app.post('/api/teas/import', async (req, res) => {
 
       // 3. Type
       let type = '';
-      const validTypes = ['Green', 'Black', 'PuEr', 'Yellow', 'White', 'Oolong'];
+      const validTypes = ['Green', 'Black', 'PuEr', 'Yellow', 'White', 'Oolong'] as const;
 
       const infoTitles = document.querySelectorAll('.info-title');
       infoTitles.forEach(el => {
@@ -237,7 +380,7 @@ app.post('/api/teas/import', async (req, res) => {
               const matches = numberSequence.match(/(\d+)\s*s/gi);
 
               if (matches) {
-                matches.forEach(m => {
+                matches.forEach((m: string) => {
                   const num = parseInt(m.match(/\d+/)![0]);
                   if (!isNaN(num) && num >= 3 && num <= 999) {
                     steepTimes.push(num);
@@ -355,6 +498,20 @@ app.post('/api/teas/import', async (req, res) => {
         return { name: 'Error', type: '', image: '', steepTimes: [], caffeine: String(e), caffeineLevel: 'Low', website: window.location.href, brewingTemperature: '', teaWeight: '' };
       }
     });
+    } catch (evaluateError) {
+      console.error('Failed to evaluate page content:', evaluateError);
+      await page.close();
+      res.status(400).json({ error: 'Failed to extract tea information from the page. The website may not be supported.' });
+      return;
+    }
+
+    // Check if scraping returned valid data
+    if (!data || !data.name || data.name === 'Error') {
+      await page.close();
+      console.warn('Scraping returned no valid data from', url);
+      res.status(400).json({ error: 'Could not extract tea information from the URL. Please try a different URL or enter the information manually.' });
+      return;
+    }
 
     await page.close(); // Only close the page, not the browser
 
@@ -370,27 +527,51 @@ app.post('/api/teas/import', async (req, res) => {
       type: normalizeTeaType(data.type)
     };
 
+    console.log(`Successfully scraped tea data from ${url}:`, normalizedResponse.name);
     res.json(normalizedResponse);
 
   } catch (error: any) {
-    if (page) await page.close();
+    if (page) {
+      try {
+        await page.close();
+      } catch (closeError) {
+        console.error('Failed to close page:', closeError);
+      }
+    }
     console.error('Scraping error:', error);
-    res.status(500).json({ error: 'Failed to scrape URL', details: error.message });
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred during scraping';
+    res.status(500).json({ error: 'Failed to scrape URL', details: errorMessage });
   }
 });
 
 app.get('/api/teas', (req, res) => {
   try {
     const teas = readTeas();
+    console.log(`Retrieved ${teas.length} teas from collection`);
     res.json(teas);
-  } catch {
-    res.status(500).json({ error: 'Failed to read teas' });
+  } catch (error) {
+    console.error('Failed to read teas:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+    res.status(500).json({ error: 'Failed to read tea collection', details: errorMessage });
   }
 });
 
 app.post('/api/teas', (req, res) => {
   try {
-    const teas = readTeas();
+    // Validate request body first
+    if (!req.body) {
+      res.status(400).json({ error: 'Request body is required' });
+      return;
+    }
+
+    let teas;
+    try {
+      teas = readTeas();
+    } catch (readError) {
+      console.error('Failed to read existing teas:', readError);
+      res.status(500).json({ error: 'Failed to read existing tea collection', details: readError instanceof Error ? readError.message : 'Unknown error' });
+      return;
+    }
 
     // Normalize tea type before validation
     const normalizedData = {
@@ -399,29 +580,74 @@ app.post('/api/teas', (req, res) => {
     };
 
     // Validate request body
-    const newTeaData = TeaSchema.omit({ id: true }).parse(normalizedData);
+    let newTeaData;
+    try {
+      newTeaData = TeaSchema.omit({ id: true }).parse(normalizedData);
+    } catch (validationError) {
+      console.error('Tea data validation failed:', validationError);
+      if (validationError instanceof z.ZodError) {
+        res.status(400).json({ error: 'Invalid tea data', details: validationError.issues });
+      } else {
+        res.status(400).json({ error: 'Failed to validate tea data', details: validationError instanceof Error ? validationError.message : 'Unknown validation error' });
+      }
+      return;
+    }
 
     const newTea: Tea = { ...newTeaData, id: Date.now().toString() };
     teas.push(newTea);
-    writeTeas(teas);
-    res.status(201).json(newTea);
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-       res.status(400).json({ error: 'Invalid tea data', details: error.issues });
-    } else {
-       res.status(500).json({ error: 'Failed to save tea' });
+
+    try {
+      writeTeas(teas);
+      console.log(`Successfully created new tea: ${newTea.name} (ID: ${newTea.id})`);
+      res.status(201).json(newTea);
+    } catch (writeError) {
+      console.error('Failed to save new tea:', writeError);
+      res.status(500).json({ error: 'Failed to save tea', details: writeError instanceof Error ? writeError.message : 'Unknown error' });
     }
+  } catch (error) {
+    console.error('Unexpected error in POST /api/teas:', error);
+    res.status(500).json({ error: 'An unexpected error occurred while saving tea', details: error instanceof Error ? error.message : 'Unknown error' });
   }
 });
 
 app.delete('/api/teas/:id', (req, res) => {
   try {
-    const teas = readTeas();
-    const filteredTeas = teas.filter(t => t.id !== req.params.id);
-    writeTeas(filteredTeas);
-    res.status(204).send();
-  } catch {
-    res.status(500).json({ error: 'Failed to delete tea' });
+    const teaId = req.params.id;
+
+    if (!teaId) {
+      res.status(400).json({ error: 'Tea ID is required' });
+      return;
+    }
+
+    let teas;
+    try {
+      teas = readTeas();
+    } catch (readError) {
+      console.error('Failed to read teas before deletion:', readError);
+      res.status(500).json({ error: 'Failed to read tea collection', details: readError instanceof Error ? readError.message : 'Unknown error' });
+      return;
+    }
+
+    const teaToDelete = teas.find(t => t.id === teaId);
+    if (!teaToDelete) {
+      console.warn(`Attempted to delete non-existent tea with ID: ${teaId}`);
+      res.status(404).json({ error: 'Tea not found' });
+      return;
+    }
+
+    const filteredTeas = teas.filter(t => t.id !== teaId);
+
+    try {
+      writeTeas(filteredTeas);
+      console.log(`Successfully deleted tea: ${teaToDelete.name} (ID: ${teaId})`);
+      res.status(204).send();
+    } catch (writeError) {
+      console.error('Failed to save teas after deletion:', writeError);
+      res.status(500).json({ error: 'Failed to delete tea', details: writeError instanceof Error ? writeError.message : 'Unknown error' });
+    }
+  } catch (error) {
+    console.error('Unexpected error in DELETE /api/teas/:id:', error);
+    res.status(500).json({ error: 'An unexpected error occurred while deleting tea', details: error instanceof Error ? error.message : 'Unknown error' });
   }
 });
 
