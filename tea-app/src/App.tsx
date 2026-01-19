@@ -245,7 +245,7 @@ const TeaDashboard = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedType, setSelectedType] = useState<string | null>(null);
   const [selectedCaffeineLevel, setSelectedCaffeineLevel] = useState<string | null>(null);
-  const [sortBy, setSortBy] = useState<'date' | 'name-asc' | 'name-desc' | 'type' | 'caffeine-asc' | 'caffeine-desc'>('date');
+  const [sortBy, setSortBy] = useState<'date' | 'name-asc' | 'name-desc' | 'type' | 'caffeine-asc' | 'caffeine-desc' | 'steeps-asc' | 'steeps-desc'>('date');
   const [usedSteepTimes, setUsedSteepTimes] = useState<Map<string, Set<number>>>(new Map());
   const [selectedTeaId, setSelectedTeaId] = useState<string | null>(null);
   const { startTimer } = useTimer();
@@ -314,6 +314,10 @@ const TeaDashboard = () => {
         return caffeineLevelValue(a.caffeineLevel) - caffeineLevelValue(b.caffeineLevel);
       case 'caffeine-desc':
         return caffeineLevelValue(b.caffeineLevel) - caffeineLevelValue(a.caffeineLevel);
+      case 'steeps-asc':
+        return a.steepTimes.length - b.steepTimes.length;
+      case 'steeps-desc':
+        return b.steepTimes.length - a.steepTimes.length;
       case 'date':
       default:
         return parseInt(b.id) - parseInt(a.id);
@@ -353,6 +357,8 @@ const TeaDashboard = () => {
              <option value="type">Tea Type</option>
              <option value="caffeine-asc">Caffeine (Low to High)</option>
              <option value="caffeine-desc">Caffeine (High to Low)</option>
+             <option value="steeps-asc">Steeps (Fewest First)</option>
+             <option value="steeps-desc">Steeps (Most First)</option>
            </select>
            <button onClick={() => setShowForm(true)} className="btn-primary btn-add-tea">
              <Plus size={18} /> Add Tea
@@ -462,6 +468,7 @@ const TeaDashboard = () => {
                         <div className="tea-brewing-info">
                           {tea.brewingTemperature && <span className="brewing-temp">{tea.brewingTemperature}</span>}
                           {tea.teaWeight && <span className="tea-weight">{tea.teaWeight}</span>}
+                          <span className="steep-count">{tea.steepTimes.length} steeps</span>
                         </div>
                       </div>
                     </div>

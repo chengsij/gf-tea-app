@@ -322,7 +322,8 @@
 }
 
 .brewing-temp,
-.tea-weight {
+.tea-weight,
+.steep-count {
   padding: 0.25rem 0.5rem;
   background: var(--color-bg-secondary);
   border-radius: var(--radius-sm);
