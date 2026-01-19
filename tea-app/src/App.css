@@ -652,8 +652,9 @@ select:hover {
   font-weight: 600;
   font-size: 0.9rem;
   color: var(--color-text-muted);
-  min-width: 115px;
+  width: 160px;
   display: inline-block;
+  text-align: right;
   text-decoration: none;
 }
 
