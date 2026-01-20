@@ -43,13 +43,8 @@ cd tea-app
 # Install dependencies (if not already installed)
 npm install
 
-# Backend (in one terminal)
-cd server
-npm start
-
-# Frontend (in another terminal)
-cd ..
-npm run dev
+#Frontend and backend ports are configured at ./.scripts/config.sh
+./.scripts/startup.sh
 
 # Access at http://localhost:5173
 ```
