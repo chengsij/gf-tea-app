@@ -5,6 +5,6 @@ goal.txt
 goal2.txt
 typescript_rules.log
 tea-app/server/teas.yaml
-.scripts/.pids/
+tea-app/.scripts/.pids/
 tea-app/server/coverage/
 .playwright-mcp/

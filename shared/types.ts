@@ -24,7 +24,8 @@ export const TeaSchema = z.object({
   caffeineLevel: CaffeineLevelSchema,
   website: z.string(),
   brewingTemperature: z.string(),
-  teaWeight: z.string()
+  teaWeight: z.string(),
+  rating: z.number().min(1).max(10).nullable().optional()
 });
 
 export type Tea = z.infer<typeof TeaSchema>;
@@ -39,7 +40,8 @@ export const CreateTeaSchema = z.object({
   caffeineLevel: CaffeineLevelSchema.optional().default('Low'),
   website: z.string().optional().default(''),
   brewingTemperature: z.string().optional().default(''),
-  teaWeight: z.string().optional().default('')
+  teaWeight: z.string().optional().default(''),
+  rating: z.number().min(1).max(10).nullable().optional()
 });
 
 export type CreateTea = z.infer<typeof CreateTeaSchema>;

@@ -18,6 +18,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 All commands should be run from `/tea-app` directory.
 
 ### Building & Running
+**IMPORTANT**: Always use the scripts in `./scripts` directory to start or shutdown the servers. 
 
 ```bash
 npm run dev          # Start Vite dev server (http://localhost:5173) + backend
@@ -26,12 +27,16 @@ npm run lint         # Run ESLint to check for style/type issues
 npm run preview      # Preview production build locally
 ```
 
+```bash
+./.scripts/startup.sh
+```
+
 ### Backend Server
 
 The Express server runs on port 3001 and must be started alongside the frontend dev server:
 
 ```bash
-cd tea-app && npm run dev  # Starts both frontend (Vite) and backend
+./.scripts/startup.sh
 ```
 
 The backend loads a Puppeteer browser instance on startup for URL scraping.
@@ -41,7 +46,7 @@ The backend loads a Puppeteer browser instance on startup for URL scraping.
 ### Frontend Stack
 - **React 19.2.0** with TypeScript for UI
 - **Vite** for bundling and dev server
-- **Axios** for type-safe API calls
+- **Axios** for type-safe API calls./
 - **Zod** for runtime schema validation
 - **Context API** for global timer state management (`TimerContext`)
 - **Lucide React** for icons
