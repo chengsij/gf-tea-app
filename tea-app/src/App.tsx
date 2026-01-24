@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import './App.css'
 import type { Tea, CaffeineLevel, TeaType } from './types'
-import { getTeas, createTea, deleteTea, importTeaFromUrl, updateTea } from './api'
+import { getTeas, createTea, deleteTea, importTeaFromUrl, updateTea, markTeaConsumed } from './api'
 import { TimerProvider, useTimer } from './TimerContext'
 import { Clock, Plus, X, Coffee, ExternalLink, Star } from 'lucide-react'
 import { CAFFEINE_LEVELS, TEA_TYPES } from './types'
@@ -45,6 +45,28 @@ const SidePanel = ({
   onTeaUpdated: () => void;
 }) => {
   const [isUpdatingRating, setIsUpdatingRating] = useState(false);
+  const [isMarkingConsumed, setIsMarkingConsumed] = useState(false);
+
+  const { activeSteepIndex } = useTimer();
+
+  const handleMarkConsumed = async () => {
+    setIsMarkingConsumed(true);
+    try {
+      await markTeaConsumed(tea.id);
+      showSuccess('Tea marked as consumed!');
+      onTeaUpdated();
+    } catch (error) {
+      console.error('Failed to mark tea as consumed:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      showError(`Failed to mark as consumed: ${errorMessage}`);
+    } finally {
+      setIsMarkingConsumed(false);
+    }
+  };
+
+  // Determine if "All Done" button should be visible
+  const isLastSteep = activeSteepIndex !== null && activeSteepIndex === tea.steepTimes.length - 1;
+  const showAllDoneButton = isLastSteep;
 
   const handleRatingClick = async (rating: number | null) => {
     setIsUpdatingRating(true);
@@ -158,6 +180,15 @@ const SidePanel = ({
           {usedSteepTimes.size > 0 && (
             <button className="btn-reset-used" onClick={onResetUsed}>
               Reset
+            </button>
+          )}
+          {showAllDoneButton && (
+            <button
+              className="btn-all-done"
+              onClick={handleMarkConsumed}
+              disabled={isMarkingConsumed}
+            >
+              {isMarkingConsumed ? 'Saving...' : 'All Done'}
             </button>
           )}
         </div>
