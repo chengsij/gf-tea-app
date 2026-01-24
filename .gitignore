@@ -8,3 +8,4 @@ tea-app/server/teas.yaml
 tea-app/.scripts/.pids/
 tea-app/server/coverage/
 .playwright-mcp/
+.worktrees/
