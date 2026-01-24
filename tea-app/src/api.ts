@@ -36,3 +36,9 @@ export const updateTea = async (id: string, updates: Partial<Tea>): Promise<Tea>
   console.log(`  Response data: ${JSON.stringify(response.data)}`);
   return TeaSchema.parse(response.data);
 };
+
+export const markTeaConsumed = async (id: string): Promise<Tea> => {
+  const url = `${API_URL}/teas/${id}/lastConsumed`;
+  const response = await axios.put(url);
+  return TeaSchema.parse(response.data);
+};
