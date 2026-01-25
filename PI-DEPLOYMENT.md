@@ -6,8 +6,8 @@ On your Raspberry Pi, run:
 
 ```bash
 # Clone the repo
-git clone https://github.com/chengsij/gf-tea-app.git
-cd gf-tea-app
+git clone https://github.com/chengsij/gf-tea.git
+cd gf-tea
 
 # Run setup script (installs everything + systemd service)
 chmod +x pi-setup.sh
