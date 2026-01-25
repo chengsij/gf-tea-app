@@ -833,20 +833,22 @@ if (process.env.NODE_ENV === 'production') {
   app.use(express.static(distPath));
 
   // React Router - serve index.html for all non-API routes
-  app.get('*', (req, res) => {
+  // Using app.use instead of app.get('*') for Express 5 compatibility
+  app.use((req, res) => {
     res.sendFile(path.join(distPath, 'index.html'));
   });
 }
 
 // Catch-all route for debugging unmatched requests (Express 5 syntax)
-app.use('/api/{*splat}', (req, _res, next) => {
-  console.log('[DEBUG] !!! UNMATCHED ROUTE !!!');
-  console.log(`  Method: ${req.method}`);
-  console.log(`  Path: ${req.path}`);
-  console.log(`  URL: ${req.url}`);
-  console.log('  This request did NOT match any registered route.');
-  next();
-});
+// Temporarily disabled due to path-to-regexp compatibility issue
+// app.use('/api/{*splat}', (req, _res, next) => {
+//   console.log('[DEBUG] !!! UNMATCHED ROUTE !!!');
+//   console.log(`  Method: ${req.method}`);
+//   console.log(`  Path: ${req.path}`);
+//   console.log(`  URL: ${req.url}`);
+//   console.log('  This request did NOT match any registered route.');
+//   next();
+// });
 
 // Helper function to list all registered routes
 const listRoutes = () => {

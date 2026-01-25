@@ -9,33 +9,39 @@ echo "========================================="
 echo ""
 
 # 1. Install dependencies
-echo "[1/5] Installing dependencies..."
+echo "[1/6] Installing dependencies..."
 cd tea-app
 npm install
-cd server && npm install && cd ..
+cd server && npm ci --omit=dev && npm install -D typescript && cd ..
 echo "✓ Dependencies installed"
 echo ""
 
 # 2. Build React frontend
-echo "[2/5] Building React frontend..."
+echo "[2/6] Building React frontend..."
 npm run build
 echo "✓ Frontend built to dist/"
 echo ""
 
-# 3. Install systemd service
-echo "[3/5] Installing systemd service..."
+# 3. Build backend server
+echo "[3/6] Building backend server..."
+cd server && npm run build && cd ..
+echo "✓ Server built to server/dist/"
+echo ""
+
+# 4. Install systemd service
+echo "[4/6] Installing systemd service..."
 sudo cp ../tea-app.service /etc/systemd/system/
 sudo systemctl daemon-reload
 echo "✓ Service installed"
 echo ""
 
-# 4. Enable and start service
-echo "[4/5] Enabling service to start on boot..."
+# 5. Enable and start service
+echo "[5/6] Enabling service to start on boot..."
 sudo systemctl enable tea-app
 echo "✓ Service enabled"
 echo ""
 
-echo "[5/5] Starting service..."
+echo "[6/6] Starting service..."
 sudo systemctl start tea-app
 echo "✓ Service started"
 echo ""
