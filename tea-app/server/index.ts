@@ -226,11 +226,49 @@ const getBrowser = async () => {
       executablePath: '/usr/bin/chromium-browser',
       headless: true,
       args: [
+        // Sandbox and security (required for Raspberry Pi)
         '--no-sandbox',
         '--disable-setuid-sandbox',
+
+        // Memory and performance
         '--disable-dev-shm-usage',
         '--disable-gpu',
-        '--single-process'
+        '--single-process',
+        '--no-zygote',
+        '--disable-accelerated-2d-canvas',
+        '--disable-software-rasterizer',
+
+        // Disable unnecessary features
+        '--disable-extensions',
+        '--disable-background-networking',
+        '--disable-default-apps',
+        '--disable-sync',
+        '--disable-translate',
+        '--disable-background-timer-throttling',
+        '--disable-backgrounding-occluded-windows',
+        '--disable-renderer-backgrounding',
+        '--disable-breakpad',
+        '--disable-component-update',
+        '--disable-domain-reliability',
+        '--disable-hang-monitor',
+        '--disable-ipc-flooding-protection',
+        '--disable-client-side-phishing-detection',
+
+        // Reduce network overhead
+        '--disable-features=TranslateUI,BlinkGenPropertyTrees,IsolateOrigins,site-per-process',
+        '--enable-features=NetworkService,NetworkServiceInProcess',
+
+        // Skip first-run tasks
+        '--no-first-run',
+        '--no-default-browser-check',
+        '--no-pings',
+
+        // Disable audio/video hardware
+        '--mute-audio',
+        '--autoplay-policy=no-user-gesture-required',
+
+        // Limit memory usage
+        '--js-flags=--max-old-space-size=256'
       ],
       timeout: 30000
     });
@@ -298,7 +336,7 @@ app.post('/api/teas/import', async (req, res) => {
 
     // Navigate to URL with error handling - use domcontentloaded for faster loading
     try {
-      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 });
+      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
       logger.debug(`Successfully navigated to ${url}`);
     } catch (navigationError) {
       logger.error(`Puppeteer scraping failed - ${url}: Failed to load page - ${navigationError instanceof Error ? navigationError.message : String(navigationError)}`);
