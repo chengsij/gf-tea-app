@@ -908,13 +908,22 @@ const listRoutes = () => {
 };
 
 app.listen(port, '0.0.0.0', () => {
-  console.log(`Server running at http://0.0.0.0:${port}`);
+  const nodeEnv = process.env.NODE_ENV || 'development';
+  logger.info(`Tea Timer Server starting on port ${port} (${nodeEnv} mode)`);
 
   // List all registered routes for debugging
   listRoutes();
 
   // Pre-load the browser
   getBrowser()
-    .then(() => console.log('Browser instance pre-loaded'))
-    .catch(err => console.error('Failed to pre-load browser:', err));
+    .then(() => logger.info('Puppeteer browser initialized'))
+    .catch(err => logger.error('Failed to pre-load browser:', err));
+
+  // Load teas at startup
+  try {
+    const teas = readTeas();
+    logger.info(`Loaded ${teas.length} teas from teas.yaml`);
+  } catch (error) {
+    logger.error('Failed to load teas at startup:', error instanceof Error ? error.message : String(error));
+  }
 });
