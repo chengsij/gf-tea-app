@@ -13,7 +13,8 @@ dotenv.config();
 
 console.log('!!! INDEX.TS LOADED - PATCH SHOULD BE IN CORS !!!');
 
-// Import shared types and constants
+// Import logger and shared types
+import logger from './logger';
 import { TeaSchema, CreateTeaSchema } from '../../shared/types';
 import type { Tea } from '../../shared/types';
 
@@ -35,6 +36,36 @@ app.use(cors({
   allowedHeaders: ['Content-Type']
 }));
 app.use(express.json());
+
+// HTTP request logging middleware
+app.use((req, res, next) => {
+  const startTime = Date.now();
+  const slowRequestThreshold = parseInt(process.env.SLOW_REQUEST_MS || '1000', 10);
+  let logged = false;
+
+  const logRequest = () => {
+    if (logged) return; // Prevent duplicate logs
+    logged = true;
+
+    const duration = Date.now() - startTime;
+    const logMessage = `${req.method} ${req.originalUrl} ${res.statusCode} ${duration}ms`;
+
+    try {
+      if (duration > slowRequestThreshold) {
+        logger.warn(`${logMessage} (slow request)`);
+      } else {
+        logger.info(logMessage);
+      }
+    } catch (logError) {
+      console.error('Failed to write log entry:', logError);
+    }
+  };
+
+  res.on('finish', logRequest);
+  res.on('close', logRequest);
+
+  next();
+});
 
 // Debug logging middleware - DETAILED
 app.use((req, res, next) => {
