@@ -827,6 +827,17 @@ app.put('/api/teas/:id/lastConsumed', (req, res) => {
   }
 });
 
+// Serve static files from React build (for production)
+if (process.env.NODE_ENV === 'production') {
+  const distPath = path.join(__dirname, '..', '..', 'dist');
+  app.use(express.static(distPath));
+
+  // React Router - serve index.html for all non-API routes
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(distPath, 'index.html'));
+  });
+}
+
 // Catch-all route for debugging unmatched requests (Express 5 syntax)
 app.use('/api/{*splat}', (req, _res, next) => {
   console.log('[DEBUG] !!! UNMATCHED ROUTE !!!');
@@ -863,8 +874,8 @@ const listRoutes = () => {
   console.log('[DEBUG] === END ROUTES ===\n');
 };
 
-app.listen(port, () => {
-  console.log(`Server running at http://localhost:${port}`);
+app.listen(port, '0.0.0.0', () => {
+  console.log(`Server running at http://0.0.0.0:${port}`);
 
   // List all registered routes for debugging
   listRoutes();
