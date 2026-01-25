@@ -10,10 +10,10 @@ export {
   type CaffeineLevel,
   type BrewingMethod,
   type CreateTea
-} from '../../shared/types';
+} from '../shared/types';
 
 export {
   TEA_TYPES,
   CAFFEINE_LEVELS,
   BREWING_METHODS
-} from '../../shared/constants';
+} from '../shared/constants';

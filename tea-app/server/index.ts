@@ -10,8 +10,8 @@ import { z } from 'zod';
 
 // Import logger and shared types
 import logger from './logger';
-import { TeaSchema, CreateTeaSchema } from '../../shared/types';
-import type { Tea } from '../../shared/types';
+import { TeaSchema, CreateTeaSchema } from '../shared/types';
+import type { Tea } from '../shared/types';
 
 // Load environment variables
 dotenv.config();

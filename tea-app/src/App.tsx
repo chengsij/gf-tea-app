@@ -47,8 +47,6 @@ const SidePanel = ({
   const [isUpdatingRating, setIsUpdatingRating] = useState(false);
   const [isMarkingConsumed, setIsMarkingConsumed] = useState(false);
 
-  const { activeSteepIndex } = useTimer();
-
   const handleMarkConsumed = async () => {
     setIsMarkingConsumed(true);
     try {
@@ -65,8 +63,9 @@ const SidePanel = ({
   };
 
   // Determine if "All Done" button should be visible
-  const isLastSteep = activeSteepIndex !== null && activeSteepIndex === tea.steepTimes.length - 1;
-  const showAllDoneButton = isLastSteep;
+  // Show button if the last steep time has been used, regardless of timer state
+  const lastSteepIndex = tea.steepTimes.length - 1;
+  const showAllDoneButton = usedSteepTimes.has(lastSteepIndex);
 
   const handleRatingClick = async (rating: number | null) => {
     setIsUpdatingRating(true);
