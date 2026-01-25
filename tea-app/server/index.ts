@@ -652,6 +652,7 @@ app.post('/api/teas', (req, res) => {
     try {
       writeTeas(teas);
       console.log(`Successfully created new tea: ${newTea.name} (ID: ${newTea.id})`);
+      logger.info(`Tea created - id: ${newTea.id}, name: "${newTea.name}"`);
       res.status(201).json(newTea);
     } catch (writeError) {
       console.error('Failed to save new tea:', writeError);
@@ -684,6 +685,7 @@ app.delete('/api/teas/:id', (req, res) => {
     const teaToDelete = teas.find(t => t.id === teaId);
     if (!teaToDelete) {
       console.warn(`Attempted to delete non-existent tea with ID: ${teaId}`);
+      logger.warn(`Delete failed - tea not found: id ${teaId}`);
       res.status(404).json({ error: 'Tea not found' });
       return;
     }
@@ -693,6 +695,7 @@ app.delete('/api/teas/:id', (req, res) => {
     try {
       writeTeas(filteredTeas);
       console.log(`Successfully deleted tea: ${teaToDelete.name} (ID: ${teaId})`);
+      logger.info(`Tea deleted - id: ${teaId}`);
       res.status(204).send();
     } catch (writeError) {
       console.error('Failed to save teas after deletion:', writeError);
@@ -817,6 +820,7 @@ app.put('/api/teas/:id/lastConsumed', (req, res) => {
     const teaIndex = teas.findIndex(t => t.id === id);
     if (teaIndex === -1) {
       console.warn(`Attempted to mark non-existent tea as consumed with ID: ${id}`);
+      logger.warn(`Consumption failed - tea not found: id ${id}`);
       res.status(404).json({ error: 'Tea not found' });
       return;
     }
@@ -847,6 +851,7 @@ app.put('/api/teas/:id/lastConsumed', (req, res) => {
     try {
       writeTeas(teas);
       console.log(`Successfully marked tea as consumed: ${validatedTea.name} (ID: ${id}), times consumed: ${validatedTea.timesConsumed}`);
+      logger.info(`Tea consumed - id: ${id} (count: ${validatedTea.timesConsumed})`);
       res.status(200).json(validatedTea);
     } catch (writeError) {
       console.error('Failed to save tea after marking consumed:', writeError);
