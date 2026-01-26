@@ -5,7 +5,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import express from 'express';
 import yaml from 'js-yaml';
-import puppeteer, { Browser, HTTPRequest } from 'puppeteer-core';
+import puppeteer, { Browser, HTTPRequest } from 'puppeteer';
 import { z } from 'zod';
 
 // Import logger and shared types
@@ -39,8 +39,8 @@ const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',').map(origin => ori
 app.use(cors({
   origin: allowedOrigins,
   credentials: true,
-  methods: ['GET', 'POST', 'DELETE', 'PATCH', 'PUT'],
-  allowedHeaders: ['Content-Type']
+  methods: ['GET', 'POST', 'DELETE', 'PATCH', 'PUT', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'authorization']
 }));
 app.use(express.json());
 
@@ -230,7 +230,6 @@ let browserInstance: Browser | null = null;
 const getBrowser = async () => {
   if (!browserInstance) {
     browserInstance = await puppeteer.launch({
-      executablePath: '/usr/bin/chromium-browser',
       headless: true,
       args: [
         // Sandbox and security (required for Raspberry Pi)

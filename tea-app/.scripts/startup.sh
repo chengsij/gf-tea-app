@@ -75,7 +75,7 @@ echo ""
 # Start Backend Server
 echo -e "${GREEN}[1/2] Starting Backend Server (Express on port $BACKEND_PORT)...${NC}"
 cd "$BACKEND_DIR"
-npm start > "$SCRIPT_DIR/backend.log" 2>&1 &
+npx tsx index.ts > "$SCRIPT_DIR/backend.log" 2>&1 &
 BACKEND_PID=$!
 echo $BACKEND_PID > "$PID_DIR/backend.pid"
 echo "Backend PID: $BACKEND_PID"
