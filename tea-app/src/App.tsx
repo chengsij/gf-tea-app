@@ -3,11 +3,12 @@ import './App.css'
 import type { Tea, CaffeineLevel, TeaType } from './types'
 import { getTeas, createTea, deleteTea, importTeaFromUrl, updateTea, markTeaConsumed } from './api'
 import { TimerProvider, useTimer } from './TimerContext'
-import { Clock, Plus, X, Coffee, ExternalLink, Star } from 'lucide-react'
+import { Clock, Plus, X, Coffee, ExternalLink, Star, LogOut } from 'lucide-react'
 import { CAFFEINE_LEVELS, TEA_TYPES } from './types'
 import { Toaster } from 'sonner'
 import { showSuccess, showError, showInfo } from './utils/toast'
-import { TeaCard, FilterBar, SortControls } from './components'
+import { TeaCard, FilterBar, SortControls, LoginPage } from './components'
+import { AuthProvider, useAuth } from './AuthContext'
 
 const TimerOverlay = () => {
   const { timeLeft, activeTeaName, stopTimer } = useTimer();
@@ -365,7 +366,28 @@ const TeaForm = ({ onTeaAdded, onClose }: { onTeaAdded: () => void, onClose: () 
   );
 };
 
-const TeaDashboard = () => {
+const AuthenticatedApp = () => {
+  const { isAuthenticated, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div className="login-page">
+        <div className="login-container">
+          <p style={{ textAlign: 'center', color: 'var(--text-secondary)' }}>Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <LoginPage />;
+  }
+
+  return <AppContent />;
+};
+
+function AppContent() {
+  const { logout } = useAuth();
   const [teas, setTeas] = useState<Tea[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -488,11 +510,14 @@ const TeaDashboard = () => {
           </div>
           <h1>Tea Collection</h1>
         </div>
-        
+
         <div className="header-controls">
           <SortControls sortBy={sortBy} onSortChange={setSortBy} />
           <button onClick={() => setShowForm(true)} className="btn-primary btn-add-tea">
             <Plus size={18} /> Add Tea
+          </button>
+          <button onClick={logout} className="logout-button" title="Logout">
+            <LogOut size={20} />
           </button>
         </div>
       </div>
@@ -556,16 +581,18 @@ const TeaDashboard = () => {
       </div>
     </div>
   );
-};
+}
 
 function App() {
   return (
-    <TimerProvider>
-      <Toaster position="top-right" richColors />
-      <TimerOverlay />
-      <TeaDashboard />
-    </TimerProvider>
-  )
+    <AuthProvider>
+      <TimerProvider>
+        <AuthenticatedApp />
+        <TimerOverlay />
+        <Toaster position="bottom-right" richColors />
+      </TimerProvider>
+    </AuthProvider>
+  );
 }
 
 export default App

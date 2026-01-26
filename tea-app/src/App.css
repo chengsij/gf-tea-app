@@ -1004,3 +1004,21 @@ select:hover {
   opacity: 0.6;
   cursor: not-allowed;
 }
+
+/* Logout Button */
+.logout-button {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.5rem;
+  cursor: pointer;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.logout-button:hover {
+  color: var(--text-primary);
+  border-color: var(--text-secondary);
+}
