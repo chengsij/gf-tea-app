@@ -12,6 +12,7 @@ import { z } from 'zod';
 import logger from './logger';
 import { TeaSchema, CreateTeaSchema } from '../shared/types';
 import type { Tea } from '../shared/types';
+import { login, requireAuth, validateAuthConfig } from './auth';
 
 // Load environment variables
 dotenv.config();
@@ -82,6 +83,12 @@ app.use((req, res, next) => {
   });
   next();
 });
+
+// Auth routes (must be before requireAuth middleware)
+app.post('/api/auth/login', login);
+
+// Protect all other API routes
+app.use('/api', requireAuth);
 
 // Normalize tea type to canonical form (handles variations like "pu-er", "Pu-Er", etc.)
 // Helper function to check if a hostname is a private/local IP address
@@ -948,6 +955,9 @@ app.listen(port, '0.0.0.0', () => {
 
   // List all registered routes for debugging
   listRoutes();
+
+  // Validate auth configuration
+  validateAuthConfig();
 
   // Pre-load the browser
   getBrowser()
