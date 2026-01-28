@@ -38,26 +38,6 @@
   teaWeight: 4g Tea
   timesConsumed: 0
   lastConsumedDate: null
-- id: '1768673001286'
-  name: Taiwan Dong Ding (Tung Ting) Oolong Tea
-  type: Oolong
-  image: >-
-    https://d27pcll2dx97vv.cloudfront.net/pub/media/catalog/product/cache/0f831c1845fc143d00d6d1ebc49f446a/t/a/taiwan_dongding_oolongtea_1_1_1.jpg
-  steepTimes:
-    - 20
-    - 30
-    - 35
-    - 45
-    - 55
-    - 70
-    - 90
-  caffeine: 'Caffeine: Moderate caffeine (less than 20% of a cup of coffee)'
-  caffeineLevel: Medium
-  website: https://www.teavivre.com/dong-ding-oolong-tea.html
-  brewingTemperature: 212℉ / 100℃
-  teaWeight: 7g Tea
-  timesConsumed: 0
-  lastConsumedDate: null
 - id: '1768673250777'
   name: Jasmine Raw Pu-erh Mini Tuocha
   type: PuEr
@@ -167,5 +147,25 @@
   brewingTemperature: 203℉ / 95℃
   teaWeight: 8g Tea
   rating: 9
-  timesConsumed: 0
-  lastConsumedDate: null
+  timesConsumed: 1
+  lastConsumedDate: 1769460431426
+- id: '1769535410078'
+  name: Organic Lapsang Souchong Smoky Black Tea
+  type: Black
+  image: >-
+    https://d27pcll2dx97vv.cloudfront.net/pub/media/catalog/product/cache/0f831c1845fc143d00d6d1ebc49f446a/o/r/organic_lapsang_1.jpg
+  steepTimes:
+    - 5
+    - 10
+    - 15
+    - 20
+    - 25
+    - 35
+    - 45
+  caffeine: 'Caffeine: Less than 40% of a cup of coffee'
+  caffeineLevel: High
+  website: https://www.teavivre.com/organic-smoky-lapsang-black-tea.html
+  brewingTemperature: 194℉ / 90℃
+  teaWeight: 5g Tea
+  timesConsumed: 1
+  lastConsumedDate: 1769541035828

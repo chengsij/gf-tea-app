@@ -46,6 +46,8 @@ export const createTea = async (tea: CreateTea): Promise<Tea> => {
 
 export const importTeaFromUrl = async (url: string): Promise<CreateTea> => {
   const response = await api.post('/teas/import', { url });
+  console.log(`response: ${response}`)
+  console.log(`response.status: ${response.status}`)
   return CreateTeaSchema.parse(response.data);
 };
 

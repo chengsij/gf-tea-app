@@ -5,7 +5,8 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import express from 'express';
 import yaml from 'js-yaml';
-import puppeteer, { Browser, HTTPRequest } from 'puppeteer';
+import axios from 'axios';
+import * as cheerio from 'cheerio';
 import { z } from 'zod';
 
 // Import logger and shared types
@@ -20,7 +21,7 @@ dotenv.config();
 logger.debug('Index.ts loaded and initializing Express server');
 
 const app = express();
-const port = 3001;
+const port = parseInt(process.env.PORT || '3001', 10);
 
 // Global uncaught exception handler
 process.on('uncaughtException', (error) => {
@@ -29,9 +30,10 @@ process.on('uncaughtException', (error) => {
 });
 
 const isDist = __dirname.includes('/dist/');
-const DATA_FILE = isDist
+const DATA_FILE = process.env.DATA_FILE_PATH || (isDist
   ? path.join(__dirname, '..', '..', '..', 'teas.yaml')
-  : path.join(__dirname, 'teas.yaml');
+  : path.join(__dirname, 'teas.yaml'));
+logger.info(`DATA_FILE: ${DATA_FILE}`)
 
 // Configure CORS with whitelisted origins
 const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',').map(origin => origin.trim()) || ['http://localhost:5173'];
@@ -224,307 +226,175 @@ const writeTeas = (teas: Tea[]): boolean => {
   }
 };
 
-// Singleton browser instance
-let browserInstance: Browser | null = null;
 
-const getBrowser = async () => {
-  if (!browserInstance) {
-    browserInstance = await puppeteer.launch({
-      headless: true,
-      args: [
-        // Sandbox and security (required for Raspberry Pi)
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-
-        // Memory and performance
-        '--disable-dev-shm-usage',
-        '--disable-gpu',
-        '--single-process',
-        '--no-zygote',
-        '--disable-accelerated-2d-canvas',
-        '--disable-software-rasterizer',
-
-        // Disable unnecessary features
-        '--disable-extensions',
-        '--disable-background-networking',
-        '--disable-default-apps',
-        '--disable-sync',
-        '--disable-translate',
-        '--disable-background-timer-throttling',
-        '--disable-backgrounding-occluded-windows',
-        '--disable-renderer-backgrounding',
-        '--disable-breakpad',
-        '--disable-component-update',
-        '--disable-domain-reliability',
-        '--disable-hang-monitor',
-        '--disable-ipc-flooding-protection',
-        '--disable-client-side-phishing-detection',
-
-        // Reduce network overhead
-        '--disable-features=TranslateUI,BlinkGenPropertyTrees,IsolateOrigins,site-per-process',
-        '--enable-features=NetworkService,NetworkServiceInProcess',
-
-        // Skip first-run tasks
-        '--no-first-run',
-        '--no-default-browser-check',
-        '--no-pings',
-
-        // Disable audio/video hardware
-        '--mute-audio',
-        '--autoplay-policy=no-user-gesture-required',
-
-        // Limit memory usage
-        '--js-flags=--max-old-space-size=256'
-      ],
-      timeout: 30000
-    });
-    browserInstance.on('disconnected', () => {
-      logger.info('Puppeteer browser disconnected unexpectedly');
-      browserInstance = null;
-    });
-  }
-  return browserInstance;
-};
 
 app.post('/api/teas/import', async (req, res) => {
+  logger.info('=== IMPORT ENDPOINT HIT (Axios/Cheerio) ===');
   const { url } = req.body;
   const scrapingStartTime = Date.now();
 
   // Validate URL for SSRF attacks
   const urlValidation = validateURLForSSRF(url);
   if (!urlValidation.valid) {
-    logger.warn(`Puppeteer scraping failed - ${url}: SSRF validation failed - ${urlValidation.error}`);
+    logger.warn(`Scraping failed - ${url}: SSRF validation failed - ${urlValidation.error}`);
     res.status(400).json({ error: urlValidation.error });
     return;
   }
 
-  let page;
   try {
-    let browser;
-    try {
-      browser = await getBrowser();
-    } catch (browserError) {
-      logger.error(`Puppeteer scraping failed - ${url}: Failed to launch browser - ${browserError instanceof Error ? browserError.message : String(browserError)}`);
-      res.status(500).json({ error: 'Failed to initialize browser. Please try again later.' });
-      return;
+    const response = await axios.get(url, {
+      headers: {
+        'User-Agent': 'PostmanRuntime/7.39.1',
+        'Accept': '*/*',
+        'Cache-Control': 'no-cache',
+        'Postman-Token': '7259037a-7c85-4205-9cbe-d76d2d2f0f8e',
+        'Host': 'www.teavivre.com',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Connection': 'keep-alive'
+      },
+      timeout: 30000
+    });
+
+    const $ = cheerio.load(response.data);
+
+    // Remove scripts and styles for cleaner text extraction
+    $('script').remove();
+    $('style').remove();
+
+    // 1. Name
+    const name = $('h1.page-title').text().trim() || $('h1').first().text().trim() || '';
+
+    // 2. Image
+    let image = $('meta[property="og:image"]').attr('content') || '';
+    if (!image) {
+      image = $('.gallery-placeholder__image').attr('src') || '';
     }
 
-    // Check if browser is connected
-    if (!browser || browser.process() === null) {
-      logger.error(`Puppeteer scraping failed - ${url}: Browser instance is not connected`);
-      browserInstance = null;
-      res.status(500).json({ error: 'Browser connection lost. Please try again.' });
-      return;
-    }
+    // Prepare body text for searching (remove reviews section logic)
+    let bodyText = $('body').text();
+    const reviewPatterns = [
+      /customers?\s+who\s+viewed/i,
+      /customer\s+reviews?/i,
+      /related\s+products?/i,
+      /you\s+may\s+also\s+like/i,
+      /recently\s+viewed/i
+    ];
 
-    try {
-      page = await browser.newPage();
-    } catch (pageError) {
-      logger.error(`Puppeteer scraping failed - ${url}: Failed to create new page - ${pageError instanceof Error ? pageError.message : String(pageError)}`);
-      res.status(500).json({ error: 'Failed to create browser page. Please try again.' });
-      return;
+    let cutoffIndex = bodyText.length;
+    for (const pattern of reviewPatterns) {
+      const match = bodyText.search(pattern);
+      if (match !== -1 && match < cutoffIndex) {
+        cutoffIndex = match;
+      }
     }
-    
-    // Optimize: Block unnecessary resources (but allow scripts so page renders properly)
-    await page.setRequestInterception(true);
-    page.on('request', (req: HTTPRequest) => {
-      const resourceType = req.resourceType();
-      // Block images, stylesheets, fonts, media to speed up loading
-      // Allow scripts and xhr so dynamic content can load
-      if (['image', 'stylesheet', 'font', 'media'].includes(resourceType)) {
-        req.abort();
-      } else {
-        req.continue();
+    bodyText = bodyText.substring(0, cutoffIndex);
+
+    // 3. Type
+    let type = '';
+    const validTypes = ['Green', 'Black', 'PuEr', 'Yellow', 'White', 'Oolong'] as const;
+
+    $('.info-title').each((_, el) => {
+      if ($(el).text().includes('Categories')) {
+        const containerText = $(el).parent().text();
+        validTypes.forEach(t => {
+          if (containerText.includes(t)) type = t;
+        });
+        if (!type && (containerText.includes('pu-er') || containerText.includes('Pu-Er') || containerText.includes('Pu-er'))) {
+          type = 'PuEr';
+        }
       }
     });
 
-    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36');
-
-    // Navigate to URL with error handling - use domcontentloaded for faster loading
-    try {
-      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-      logger.debug(`Successfully navigated to ${url}`);
-    } catch (navigationError) {
-      logger.error(`Puppeteer scraping failed - ${url}: Failed to load page - ${navigationError instanceof Error ? navigationError.message : String(navigationError)}`);
-      await page.close();
-      res.status(400).json({ error: 'Failed to load the URL. Please verify the URL is valid and accessible.' });
-      return;
-    }
-
-    // Give extra time for dynamic content to render
-    await new Promise(resolve => setTimeout(resolve, 1000));
-
-    let data;
-    try {
-      data = await page.evaluate(() => {
-      try {
-        // Remove customer reviews section from all processing
-        let bodyText = document.body.innerText;
-
-        // Find where reviews section starts and truncate there
-        const reviewPatterns = [
-          /customers?\s+who\s+viewed/i,
-          /customer\s+reviews?/i,
-          /related\s+products?/i,
-          /you\s+may\s+also\s+like/i,
-          /recently\s+viewed/i
-        ];
-
-        let cutoffIndex = bodyText.length;
-        for (const pattern of reviewPatterns) {
-          const match = bodyText.search(pattern);
-          if (match !== -1 && match < cutoffIndex) {
-            cutoffIndex = match;
-          }
-        }
-        bodyText = bodyText.substring(0, cutoffIndex);
-
-        // 1. Name
-      const name = document.querySelector('h1.page-title')?.textContent?.trim() || document.querySelector('h1')?.textContent?.trim() || '';
-
-      // 2. Image
-      let image = document.querySelector('meta[property="og:image"]')?.getAttribute('content') || '';
-      if (!image) {
-        // Since we block images, we can still get the src attribute from the DOM
-        image = document.querySelector('.gallery-placeholder__image')?.getAttribute('src') || '';
-      }
-
-      // 3. Type
-      let type = '';
-      const validTypes = ['Green', 'Black', 'PuEr', 'Yellow', 'White', 'Oolong'] as const;
-
-      const infoTitles = document.querySelectorAll('.info-title');
-      infoTitles.forEach(el => {
-          if (el.textContent?.includes('Categories')) {
-              const containerText = el.parentElement?.textContent || '';
-              // Check for standard type names
-              validTypes.forEach(t => {
-                  if (containerText.includes(t)) {
-                      type = t;
-                  }
-              });
-              // Check for pu-er variant if not found
-              if (!type && (containerText.includes('pu-er') || containerText.includes('Pu-Er') || containerText.includes('Pu-er'))) {
-                  type = 'PuEr';
-              }
-          }
-      });
-
-      if (!type) {
-           for (const t of validTypes) {
-               if (bodyText.includes(t) && name.includes(t)) {
-                   type = t;
-                   break;
-               }
-           }
-           // Check for pu-er variant if not found
-           if (!type && (bodyText.includes('pu-er') || bodyText.includes('Pu-Er')) && name.includes('pu')) {
-               type = 'PuEr';
-           }
-      }
-
-      // 4. Steep Times
-      const steepTimes: number[] = [];
-
-      // Find the "Recommend Brewing Method" title div and get the table after it
-      const titleDivs = document.querySelectorAll('.product-description-title');
-      let brewingTable: Element | null = null;
-
-      for (const div of titleDivs) {
-        if (div.textContent?.includes('Recommend') && div.textContent?.includes('Brew')) {
-          // Find the table that follows this div
-          let sibling = div.nextElementSibling;
-          while (sibling) {
-            if (sibling.tagName === 'TABLE') {
-              brewingTable = sibling;
-              break;
-            }
-            sibling = sibling.nextElementSibling;
-          }
+    if (!type) {
+      for (const t of validTypes) {
+        if (bodyText.includes(t) && name.includes(t)) {
+          type = t;
           break;
         }
       }
+      if (!type && (bodyText.includes('pu-er') || bodyText.includes('Pu-Er')) && name.includes('pu')) {
+        type = 'PuEr';
+      }
+    }
 
-      if (brewingTable) {
-        // Find the TD element that contains "steeps" keyword
-        const tds = brewingTable.querySelectorAll('td');
+    // 4. Steep Times
+    const steepTimes: number[] = [];
+    let brewingTable: any = null;
 
-        for (const td of tds) {
-          const tdText = td.innerText;
-
-          // Only process TDs that contain "steeps"
-          if (tdText.toLowerCase().includes('steeps')) {
-            // Find the colon after "steeps"
-            const colonIndex = tdText.toLowerCase().indexOf('steeps:');
-            if (colonIndex !== -1) {
-              const afterColon = tdText.substring(colonIndex + 7);
-
-              // Extract only the number sequence part, skipping "rinse" and other words
-              // Take only the first line after "steeps:", trim it, and remove leading words
-              const firstLine = afterColon.split('\n')[0].trim();
-              // Remove leading words like "rinse" followed by comma
-              const numberSequence = firstLine.replace(/^[a-z]+\s*,\s*/i, '');
-
-              // Extract numbers followed by 's' directly
-              const matches = numberSequence.match(/(\d+)\s*s/gi);
-
-              if (matches) {
-                matches.forEach((m: string) => {
-                  const num = parseInt(m.match(/\d+/)![0]);
-                  if (!isNaN(num) && num >= 3 && num <= 999) {
-                    steepTimes.push(num);
-                  }
-                });
-              }
-            }
-            break; // Only process the first TD with "steeps"
+    $('.product-description-title').each((_: number, el: any) => {
+      const text = $(el).text();
+      if (text.includes('Recommend') && text.includes('Brew')) {
+        let sibling = $(el).next();
+        while (sibling.length) {
+          if (sibling.is('table')) {
+            brewingTable = sibling;
+            return false; // break loop
           }
+          sibling = sibling.next();
         }
       }
+    });
 
-      // Sort by value
-      steepTimes.sort((a, b) => a - b);
+    if (brewingTable) {
+      brewingTable.find('td').each((_: number, el: any) => {
+        const tdText = $(el).text();
+        if (tdText.toLowerCase().includes('steeps')) {
+          const colonIndex = tdText.toLowerCase().indexOf('steeps:');
+          if (colonIndex !== -1) {
+            const afterColon = tdText.substring(colonIndex + 7);
+            const firstLine = afterColon.split('\n')[0].trim();
+            const numberSequence = firstLine.replace(/^[a-z]+\s*,\s*/i, '');
+            const matches = numberSequence.match(/(\d+)\s*s/gi);
 
-      // 5. Brewing Temperature and Tea Weight (for Chinese Gongfu Method)
-      let brewingTemperature = '';
-      let teaWeight = '';
-
-      if (brewingTable) {
-        const tds = brewingTable.querySelectorAll('td');
-
-        // Find the index of "Chinese Gongfu Method" to determine column offset
-        let gongfuColumnOffset = -1;
-        for (let i = 0; i < tds.length; i++) {
-          if (tds[i].innerText.toLowerCase().includes('chinese gongfu')) {
-            gongfuColumnOffset = i % 2; // 0 for first column, 1 for second column
-            break;
+            if (matches) {
+              matches.forEach((m: string) => {
+                const num = parseInt(m.match(/\d+/)![0]);
+                if (!isNaN(num) && num >= 3 && num <= 999) {
+                  steepTimes.push(num);
+                }
+              });
+            }
           }
+          return false; // break loop after finding steeps
         }
+      });
+    }
 
-        // If gongfu method found in second column (offset 1), extract its temperature and weight
-        if (gongfuColumnOffset === 1) {
-          // Temperature is typically 2 rows after method header (in the temperature row)
-          // Weight is 1 row after temperature (in the weight row)
-          for (let i = 0; i < tds.length; i++) {
-            const tdText = tds[i].innerText.trim();
+    steepTimes.sort((a, b) => a - b);
 
-            // Look for temperature patterns (with both Fahrenheit and Celsius)
-            if (i % 2 === gongfuColumnOffset && tdText.match(/\d+\s*℉\s*\/\s*\d+\s*℃/)) {
+    // 5. Brewing Temperature and Tea Weight
+    let brewingTemperature = '';
+    let teaWeight = '';
+
+    if (brewingTable) {
+      const tds = brewingTable.find('td');
+      let gongfuColumnOffset = -1;
+
+      tds.each((i: number, el: any) => {
+        if ($(el).text().toLowerCase().includes('chinese gongfu')) {
+          gongfuColumnOffset = i % 2;
+          return false;
+        }
+      });
+
+      if (gongfuColumnOffset === 1) {
+        tds.each((i: number, el: any) => {
+          const tdText = $(el).text().trim();
+          if (i % 2 === gongfuColumnOffset) {
+            if (tdText.match(/\d+\s*℉\s*\/\s*\d+\s*℃/)) {
               brewingTemperature = tdText;
             }
-
-            // Look for tea weight patterns in gongfu column
-            if (i % 2 === gongfuColumnOffset && tdText.match(/\d+\s*g\s*(?:tea)?/i)) {
+            if (tdText.match(/\d+\s*g\s*(?:tea)?/i)) {
               teaWeight = tdText;
             }
           }
-        }
+        });
       }
+    }
 
-      // 6. Caffeine Content
-      let caffeine = '';
-
-      // Search full page text for caffeine information
+    // 6. Caffeine Content
+    let caffeine = '';
+    // Search full page text for caffeine information
       const caffeinePatterns = [
         // Pattern 1: "Low/Medium/High caffeine" with optional description in parentheses
         /((?:low|medium|high|very low|very high)\s+caffeine[^.\n]*(?:\([^)]*\))?)/i,
@@ -534,107 +404,74 @@ app.post('/api/teas/import', async (req, res) => {
         /(\d+\s*-?\s*\d*\s*mg.*?caffeine|caffeine[:\s]*\d+\s*-?\s*\d*\s*mg)/i,
         // Pattern 4: Just look for any line containing caffeine
         /caffeine[^.\n]*/i
-      ];
+    ];
 
-      for (const pattern of caffeinePatterns) {
-          const match = bodyText.match(pattern);
-          if (match) {
-              let found = match[0] || match[1] || '';
-              // Clean up the text
-              found = found.replace(/\s+/g, ' ').trim();
-              // Remove leading "caffeine" word if present to avoid duplication
-              found = found.replace(/^caffeine\s+/i, '').trim();
-              // Limit length
-              if (found.length > 0 && found.length < 200) {
-                  caffeine = found;
-                  break;
-              }
-          }
+    for (const pattern of caffeinePatterns) {
+      const match = bodyText.match(pattern);
+      if (match) {
+        let found = match[0] || match[1] || '';
+        found = found.replace(/\s+/g, ' ').trim();
+        found = found.replace(/^caffeine\s+/i, '').trim();
+        if (found.length > 0 && found.length < 200) {
+          caffeine = found;
+          break;
+        }
       }
+    }
 
-      const caffeineLevel = (() => {
-        const text = caffeine.toLowerCase();
-
+    const caffeineLevel = (() => {
+      const text = caffeine.toLowerCase();
+      
         // Check for "less than X%" pattern first (treat upper bound as the threshold)
         const lessMatch = text.match(/less\s+than\s+(\d+)\s*%/);
-        if (lessMatch) {
-          const percentage = parseInt(lessMatch[1]);
-          if (percentage <= 10) return 'Low';
-          if (percentage <= 25) return 'Medium';
-          return 'High';
-        }
-
+      if (lessMatch) {
+        const percentage = parseInt(lessMatch[1]);
+        if (percentage <= 10) return 'Low';
+        if (percentage <= 25) return 'Medium';
+        return 'High';
+      }
+      
         // Check for "about X%" or plain "X%" pattern
         const percentMatch = text.match(/about\s+(\d+)\s*%|(\d+)\s*%/);
-        if (percentMatch) {
-          const percentage = parseInt(percentMatch[1] || percentMatch[2]);
-          if (percentage < 10) return 'Low';
-          if (percentage < 25) return 'Medium';
-          return 'High';
-        }
-
-        // Fallback to keyword matching
-        if (text.includes('high')) return 'High';
-        if (text.includes('low')) return 'Low';
-        if (text.includes('medium') || text.includes('moderate')) return 'Medium';
-
-        // Default to Low if no clear indicator
-        return 'Low';
-      })();
-
-      return { name, type, image, steepTimes, caffeine, caffeineLevel, website: window.location.href, brewingTemperature, teaWeight };
-      } catch (e) {
-        return { name: 'Error', type: '', image: '', steepTimes: [], caffeine: String(e), caffeineLevel: 'Low', website: window.location.href, brewingTemperature: '', teaWeight: '' };
+      if (percentMatch) {
+        const percentage = parseInt(percentMatch[1] || percentMatch[2]);
+        if (percentage < 10) return 'Low';
+        if (percentage < 25) return 'Medium';
+        return 'High';
       }
-    });
-    } catch (evaluateError) {
-      logger.error(`Puppeteer scraping failed - ${url}: Failed to evaluate page content - ${evaluateError instanceof Error ? evaluateError.message : String(evaluateError)}`);
-      await page.close();
-      res.status(400).json({ error: 'Failed to extract tea information from the page. The website may not be supported.' });
+      // Fallback to keyword matching
+      if (text.includes('high')) return 'High';
+      if (text.includes('low')) return 'Low';
+      if (text.includes('medium') || text.includes('moderate')) return 'Medium';
+      // Default to Low if no clear indicator
+        return 'Low';
+    })();
+
+    if (!name || name === 'Error') {
+      logger.warn(`Scraping failed - ${url}: Scraping returned no valid name`);
+      res.status(400).json({ error: 'Could not extract tea information. Please try entering it manually.' });
       return;
     }
 
-    // Check if scraping returned valid data
-    if (!data || !data.name || data.name === 'Error') {
-      await page.close();
-      logger.warn(`Puppeteer scraping failed - ${url}: Scraping returned no valid data`);
-      res.status(400).json({ error: 'Could not extract tea information from the URL. Please try a different URL or enter the information manually.' });
-      return;
-    }
-
-    await page.close(); // Only close the page, not the browser
-
-    // Log debug info
-    if ('debug' in data && data.debug) {
-      logger.debug('Debug steep times extracted from page', { debugInfo: data.debug });
-    }
-
-    // Normalize tea type to canonical form before sending to frontend
     const normalizedResponse = {
-      ...data,
-      type: normalizeTeaType(data.type)
+      name,
+      type: normalizeTeaType(type),
+      image,
+      steepTimes,
+      caffeine,
+      caffeineLevel,
+      website: url,
+      brewingTemperature,
+      teaWeight
     };
 
-    // Calculate scraping duration and check for slow scrapes
     const scrapingDuration = Date.now() - scrapingStartTime;
-    if (scrapingDuration > 3000) {
-      logger.warn(`Slow Puppeteer scrape - ${scrapingDuration}ms for ${url}`);
-    } else {
-      logger.info(`Successfully scraped tea data from ${url}: ${normalizedResponse.name} (${scrapingDuration}ms)`);
-    }
+    logger.info(`Successfully scraped tea data from ${url}: ${name} (${scrapingDuration}ms)`);
     res.json(normalizedResponse);
 
-  } catch (error: any) {
-    if (page) {
-      try {
-        await page.close();
-      } catch (closeError) {
-        logger.error(`Puppeteer scraping failed - ${url}: Failed to close page - ${closeError instanceof Error ? closeError.message : String(closeError)}`);
-      }
-    }
-    logger.error(`Puppeteer scraping failed - ${url}: ${error instanceof Error ? error.message : String(error)}`);
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred during scraping';
-    res.status(500).json({ error: 'Failed to scrape URL', details: errorMessage });
+  } catch (error) {
+    logger.error(`Scraping failed - ${url}: ${error instanceof Error ? error.message : String(error)}`);
+    res.status(500).json({ error: 'Failed to scrape URL', details: error instanceof Error ? error.message : 'Unknown error' });
   }
 });
 
@@ -948,7 +785,7 @@ const listRoutes = () => {
   logger.debug('Registered Express routes', { routes });
 };
 
-app.listen(port, '0.0.0.0', () => {
+app.listen(port, '0.0.0.0', async () => {
   const nodeEnv = process.env.NODE_ENV || 'development';
   logger.info(`Tea Timer Server starting on port ${port} (${nodeEnv} mode)`);
 
@@ -957,11 +794,6 @@ app.listen(port, '0.0.0.0', () => {
 
   // Validate auth configuration
   validateAuthConfig();
-
-  // Pre-load the browser
-  getBrowser()
-    .then(() => logger.info('Puppeteer browser initialized'))
-    .catch(err => logger.error('Failed to pre-load browser:', err));
 
   // Load teas at startup
   try {
