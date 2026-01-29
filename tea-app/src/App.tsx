@@ -46,10 +46,15 @@ const SidePanel = ({
   onTeaUpdated: () => void;
 }) => {
   const [isUpdatingRating, setIsUpdatingRating] = useState(false);
-  const [isMarkingConsumed, setIsMarkingConsumed] = useState(false);
+  const [isDoneDrinking, setIsDoneDrinking] = useState(false);
+
+  // Reset local state when tea changes
+  useEffect(() => {
+    setIsDoneDrinking(false);
+  }, [tea.id]);
 
   const handleMarkConsumed = async () => {
-    setIsMarkingConsumed(true);
+    setIsDoneDrinking(true);
     try {
       await markTeaConsumed(tea.id);
       showSuccess('Tea marked as consumed!');
@@ -58,8 +63,16 @@ const SidePanel = ({
       console.error('Failed to mark tea as consumed:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       showError(`Failed to mark as consumed: ${errorMessage}`);
-    } finally {
-      setIsMarkingConsumed(false);
+      setIsDoneDrinking(false); // Allow retry on error
+    }
+  };
+
+  const handleSteepClickLocal = (idx: number, time: number, teaName: string) => {
+    onSteepTimeClick(idx, time, teaName);
+    // If the last timer is clicked again, reset the "All Done" state
+    // This allows the user to mark it consumed again if they brew another round
+    if (idx === tea.steepTimes.length - 1) {
+      setIsDoneDrinking(false);
     }
   };
 
@@ -171,7 +184,7 @@ const SidePanel = ({
               <button
                 key={idx}
                 className={`steep-time-btn ${usedSteepTimes.has(idx) ? 'used' : ''}`}
-                onClick={() => onSteepTimeClick(idx, time, tea.name)}
+                onClick={() => handleSteepClickLocal(idx, time, tea.name)}
               >
                 {time}s
               </button>
@@ -186,9 +199,9 @@ const SidePanel = ({
             <button
               className="btn-all-done"
               onClick={handleMarkConsumed}
-              disabled={isMarkingConsumed}
+              disabled={isDoneDrinking}
             >
-              {isMarkingConsumed ? 'Saving...' : 'All Done'}
+              {isDoneDrinking ? 'Done' : 'All Done'}
             </button>
           )}
         </div>
