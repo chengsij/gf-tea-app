@@ -9,13 +9,9 @@ set -e
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 BACKEND_DIR="$PROJECT_ROOT/server"
-PID_DIR="$SCRIPT_DIR/.pids"
 
 # Load configuration
 source "$SCRIPT_DIR/config.sh"
-
-# Create PID directory if it doesn't exist
-mkdir -p "$PID_DIR"
 
 # Color codes for output
 GREEN='\033[0;32m'
@@ -28,32 +24,9 @@ echo -e "${BLUE}  Tea Timer App - Starting Services${NC}"
 echo -e "${BLUE}========================================${NC}"
 echo ""
 
-# Kill any orphaned server processes on configured ports
-echo -e "${BLUE}Checking for orphaned processes...${NC}"
-
-# Kill any process on backend port
-BACKEND_PORT_PID=$(lsof -ti :$BACKEND_PORT 2>/dev/null || true)
-if [ -n "$BACKEND_PORT_PID" ]; then
-    echo -e "${RED}Found orphaned process on port $BACKEND_PORT (PID: $BACKEND_PORT_PID). Killing...${NC}"
-    kill -9 $BACKEND_PORT_PID 2>/dev/null || true
-    sleep 1
-fi
-
 # Kill any orphaned ts-node/tsx server processes
 pkill -f "ts-node.*server/index.ts" 2>/dev/null || true
 pkill -f "tsx.*server/index.ts" 2>/dev/null || true
-
-# Clean up stale PID files
-if [ -f "$PID_DIR/backend.pid" ]; then
-    OLD_PID=$(cat "$PID_DIR/backend.pid")
-    if ! ps -p $OLD_PID > /dev/null 2>&1; then
-        echo "Removing stale backend PID file"
-        rm -f "$PID_DIR/backend.pid"
-    fi
-fi
-
-# Also remove frontend PID if it exists
-rm -f "$PID_DIR/frontend.pid"
 
 echo -e "${GREEN}Ports are clear. Starting services...${NC}"
 echo ""
@@ -64,7 +37,6 @@ echo -e "${GREEN}Starting Server (Express on port $BACKEND_PORT)...${NC}"
 cd "$PROJECT_ROOT"
 NODE_ENV=production npx tsx server/index.ts > "$SCRIPT_DIR/backend.log" 2>&1 &
 BACKEND_PID=$!
-echo $BACKEND_PID > "$PID_DIR/backend.pid"
 echo "Backend PID: $BACKEND_PID"
 echo ""
 
