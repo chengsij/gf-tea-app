@@ -9,6 +9,7 @@ import { Toaster } from 'sonner'
 import { showSuccess, showError, showInfo } from './utils/toast'
 import { TeaCard, FilterBar, SortControls, LoginPage } from './components'
 import { AuthProvider, useAuth } from './AuthContext'
+import { ConsumptionModal } from './ConsumptionModal'
 
 const TimerOverlay = () => {
   const { timeLeft, activeTeaName, stopTimer } = useTimer();
@@ -41,7 +42,7 @@ const SidePanel = ({
   tea: Tea;
   onClose: () => void;
   usedSteepTimes: Set<number>;
-  onSteepTimeClick: (idx: number, time: number, teaName: string) => void;
+  onSteepTimeClick: (idx: number, time: number, teaName: string, totalSteeps: number) => void;
   onResetUsed: () => void;
   onTeaUpdated: () => void;
 }) => {
@@ -68,7 +69,7 @@ const SidePanel = ({
   };
 
   const handleSteepClickLocal = (idx: number, time: number, teaName: string) => {
-    onSteepTimeClick(idx, time, teaName);
+    onSteepTimeClick(idx, time, teaName, tea.steepTimes.length);
     // If the last timer is clicked again, reset the "All Done" state
     // This allows the user to mark it consumed again if they brew another round
     if (idx === tea.steepTimes.length - 1) {
@@ -410,7 +411,11 @@ function AppContent() {
   const [usedSteepTimes, setUsedSteepTimes] = useState<Map<string, Set<number>>>(new Map());
   const [selectedTeaId, setSelectedTeaId] = useState<string | null>(null);
   const [deletingTeaId, setDeletingTeaId] = useState<string | null>(null);
-  const { startTimer } = useTimer();
+  const { startTimer, showConsumptionModal, activeTeaId, dismissConsumptionModal } = useTimer();
+  const [modalLoading, setModalLoading] = useState(false);
+  const [modalError, setModalError] = useState<string | null>(null);
+
+  const modalTeaName = activeTeaId ? teas.find(t => t.id === activeTeaId)?.name ?? 'this tea' : '';
 
   const fetchTeas = async () => {
     try {
@@ -454,8 +459,8 @@ function AppContent() {
     }
   };
 
-  const handleSteepTimeClick = (timeIdx: number, teaId: string, time: number, teaName: string) => {
-    startTimer(time, teaName, timeIdx);
+  const handleSteepTimeClick = (timeIdx: number, teaId: string, time: number, teaName: string, totalSteeps: number) => {
+    startTimer(time, teaName, timeIdx, teaId, totalSteeps);
     setUsedSteepTimes(prev => {
       const newMap = new Map(prev);
       const usedSet = newMap.get(teaId) || new Set<number>();
@@ -473,6 +478,28 @@ function AppContent() {
       console.error('Failed to download YAML:', error);
       showError('Failed to download teas.yaml');
     }
+  };
+
+  const handleConfirmConsumption = async () => {
+    if (!activeTeaId) return;
+    setModalLoading(true);
+    setModalError(null);
+    try {
+      await markTeaConsumed(activeTeaId);
+      showSuccess('Tea marked as consumed!');
+      dismissConsumptionModal();
+      fetchTeas(); // Refresh tea list
+    } catch (error) {
+      console.error('Failed to mark tea as consumed:', error);
+      setModalError(error instanceof Error ? error.message : 'Failed to save');
+    } finally {
+      setModalLoading(false);
+    }
+  };
+
+  const handleCancelConsumption = () => {
+    setModalError(null);
+    dismissConsumptionModal();
   };
 
   const uniqueTypes = useMemo(() => {
@@ -590,8 +617,8 @@ function AppContent() {
             tea={filteredTeas.find(t => t.id === selectedTeaId)!}
             onClose={() => setSelectedTeaId(null)}
             usedSteepTimes={usedSteepTimes.get(selectedTeaId) || new Set()}
-            onSteepTimeClick={(idx, time, teaName) => {
-              handleSteepTimeClick(idx, selectedTeaId, time, teaName);
+            onSteepTimeClick={(idx, time, teaName, totalSteeps) => {
+              handleSteepTimeClick(idx, selectedTeaId, time, teaName, totalSteeps);
             }}
             onResetUsed={() => {
               setUsedSteepTimes(prev => {
@@ -604,6 +631,16 @@ function AppContent() {
           />
         )}
       </div>
+
+      {showConsumptionModal && activeTeaId && (
+        <ConsumptionModal
+          teaName={modalTeaName}
+          onConfirm={handleConfirmConsumption}
+          onCancel={handleCancelConsumption}
+          isLoading={modalLoading}
+          error={modalError}
+        />
+      )}
     </div>
   );
 }
