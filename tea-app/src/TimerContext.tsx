@@ -4,8 +4,12 @@ interface TimerContextType {
   timeLeft: number | null;
   activeTeaName: string | null;
   activeSteepIndex: number | null;
-  startTimer: (seconds: number, teaName: string, steepIndex: number) => void;
+  activeTeaId: string | null;
+  activeTeaTotalSteeps: number | null;
+  showConsumptionModal: boolean;
+  startTimer: (seconds: number, teaName: string, steepIndex: number, teaId: string, totalSteeps: number) => void;
   stopTimer: () => void;
+  dismissConsumptionModal: () => void;
 }
 
 const TimerContext = createContext<TimerContextType | undefined>(undefined);
@@ -115,15 +119,24 @@ export const TimerProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const [activeTeaName, setActiveTeaName] = useState<string | null>(null);
   const [activeSteepIndex, setActiveSteepIndex] = useState<number | null>(null);
+  const [activeTeaId, setActiveTeaId] = useState<string | null>(null);
+  const [activeTeaTotalSteeps, setActiveTeaTotalSteeps] = useState<number | null>(null);
+  const [showConsumptionModal, setShowConsumptionModal] = useState(false);
 
   useEffect(() => {
     if (timeLeft === null) return;
 
     if (timeLeft === 0) {
       playNotificationSound('end');
-      setActiveTeaName(null);
+      // Check if this was the last steep
+      if (activeSteepIndex !== null && activeTeaTotalSteeps !== null &&
+          activeSteepIndex === activeTeaTotalSteeps - 1) {
+        setShowConsumptionModal(true);
+      }
       setTimeLeft(null);
+      setActiveTeaName(null);
       setActiveSteepIndex(null);
+      // Note: Keep activeTeaId set so modal knows which tea to update
       return;
     }
 
@@ -136,23 +149,45 @@ export const TimerProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [timeLeft]);
+  }, [timeLeft, activeSteepIndex, activeTeaTotalSteeps]);
 
-  const startTimer = useCallback((seconds: number, teaName: string, steepIndex: number) => {
+  const startTimer = useCallback((seconds: number, teaName: string, steepIndex: number, teaId: string, totalSteeps: number) => {
     playNotificationSound('chime');
     setTimeLeft(seconds);
     setActiveTeaName(teaName);
     setActiveSteepIndex(steepIndex);
+    setActiveTeaId(teaId);
+    setActiveTeaTotalSteeps(totalSteeps);
+    setShowConsumptionModal(false); // Reset if starting new timer
   }, []);
 
   const stopTimer = useCallback(() => {
     setTimeLeft(null);
     setActiveTeaName(null);
     setActiveSteepIndex(null);
+    setActiveTeaId(null);
+    setActiveTeaTotalSteeps(null);
+    setShowConsumptionModal(false);
+  }, []);
+
+  const dismissConsumptionModal = useCallback(() => {
+    setShowConsumptionModal(false);
+    setActiveTeaId(null);
+    setActiveTeaTotalSteeps(null);
   }, []);
 
   return (
-    <TimerContext.Provider value={{ timeLeft, activeTeaName, activeSteepIndex, startTimer, stopTimer }}>
+    <TimerContext.Provider value={{
+      timeLeft,
+      activeTeaName,
+      activeSteepIndex,
+      activeTeaId,
+      activeTeaTotalSteeps,
+      showConsumptionModal,
+      startTimer,
+      stopTimer,
+      dismissConsumptionModal
+    }}>
       {children}
     </TimerContext.Provider>
   );
