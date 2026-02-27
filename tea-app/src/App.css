@@ -996,29 +996,6 @@ select {
   }
 }
 
-/* All Done Button */
-.btn-all-done {
-  margin-top: 0.5rem;
-  padding: 0.75rem 1.5rem;
-  background-color: #10b981;
-  color: white;
-  border: none;
-  border-radius: 0.5rem;
-  font-weight: 600;
-  cursor: pointer;
-  width: 100%;
-  transition: background-color 0.2s;
-}
-
-.btn-all-done:hover:not(:disabled) {
-  background-color: #059669;
-}
-
-.btn-all-done:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
 /* Tea Stats Display */
 .tea-stats {
   margin-top: 0.5rem;

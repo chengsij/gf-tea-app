@@ -47,40 +47,10 @@ const SidePanel = ({
   onTeaUpdated: () => void;
 }) => {
   const [isUpdatingRating, setIsUpdatingRating] = useState(false);
-  const [isDoneDrinking, setIsDoneDrinking] = useState(false);
-
-  // Reset local state when tea changes
-  useEffect(() => {
-    setIsDoneDrinking(false);
-  }, [tea.id]);
-
-  const handleMarkConsumed = async () => {
-    setIsDoneDrinking(true);
-    try {
-      await markTeaConsumed(tea.id);
-      showSuccess('Tea marked as consumed!');
-      onTeaUpdated();
-    } catch (error) {
-      console.error('Failed to mark tea as consumed:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      showError(`Failed to mark as consumed: ${errorMessage}`);
-      setIsDoneDrinking(false); // Allow retry on error
-    }
-  };
 
   const handleSteepClickLocal = (idx: number, time: number, teaName: string) => {
     onSteepTimeClick(idx, time, teaName, tea.steepTimes.length);
-    // If the last timer is clicked again, reset the "All Done" state
-    // This allows the user to mark it consumed again if they brew another round
-    if (idx === tea.steepTimes.length - 1) {
-      setIsDoneDrinking(false);
-    }
   };
-
-  // Determine if "All Done" button should be visible
-  // Show button if the last steep time has been used, regardless of timer state
-  const lastSteepIndex = tea.steepTimes.length - 1;
-  const showAllDoneButton = usedSteepTimes.has(lastSteepIndex);
 
   const handleRatingClick = async (rating: number | null) => {
     setIsUpdatingRating(true);
@@ -194,15 +164,6 @@ const SidePanel = ({
           {usedSteepTimes.size > 0 && (
             <button className="btn-reset-used" onClick={onResetUsed}>
               Reset
-            </button>
-          )}
-          {showAllDoneButton && (
-            <button
-              className="btn-all-done"
-              onClick={handleMarkConsumed}
-              disabled={isDoneDrinking}
-            >
-              {isDoneDrinking ? 'Done' : 'All Done'}
             </button>
           )}
         </div>
