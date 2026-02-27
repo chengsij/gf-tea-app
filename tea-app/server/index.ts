@@ -166,8 +166,8 @@ const normalizeTeaType = (type: string): string => {
   if (normalized === 'white') return 'White';
   if (normalized === 'oolong') return 'Oolong';
 
-  // Return as-is if not recognized (will fail validation with helpful error message)
-  return type;
+  // Return 'Other' if not recognized - user can change type manually
+  return 'Other';
 };
 
 const readTeas = (): Tea[] => {
